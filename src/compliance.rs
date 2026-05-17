@@ -1,5 +1,6 @@
 use soroban_sdk::{contractimpl, Address, Env};
 use crate::{AegisContract, DataKey};
+use crate::{AegisContractClient, AegisContractArgs};
 
 #[contractimpl]
 impl AegisContract {
