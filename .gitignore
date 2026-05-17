@@ -1,1 +1,5 @@
 .idea/
+/target/
+.env*
+.DS_Store
+**/*.rs.bk
