@@ -1,16 +1,21 @@
 #![cfg(test)]
 
 use super::*;
-use crate::asset::{AssetMintedEvent, TransferEvent, YieldDistributedEvent};
+use crate::asset::{AssetMintedEvent, AssetStatus, TransferEvent, YieldDistributedEvent};
+use crate::admin::{
+    AdminTransferredEvent, AdminTransferInitiatedEvent, ContractPausedEvent,
+    ContractUnpausedEvent, RoleAssignedEvent, RoleRevokedEvent,
+};
 use crate::capabilities::{
     CapabilityStatus, ComplianceCapabilities, ContractCapabilities, EventCapabilities,
     MetadataCapabilities, MintingCapabilities, PauseCapabilities, TransferCapabilities,
     CAPABILITY_SCHEMA_VERSION,
 };
-use crate::lifecycle::{AssetStatus, AssetStatusChangedEvent};
+use crate::lifecycle::AssetStatusChangedEvent;
 use crate::compliance::{UserWhitelistedEvent, WhitelistRevokedEvent};
 use crate::eligibility::InvestorEligibility;
 use crate::errors::Error;
+use crate::ContractInitializedEvent;
 use soroban_sdk::{
     testutils::{Address as _, Events as _},
     vec, Address, Env, IntoVal, String,
@@ -998,6 +1003,208 @@ fn test_distribute_yield_emits_event() {
     );
 }
 
+// ─── Event compatibility: admin, role & governance ────────────────────────────
+//
+// These tests lock down the exact topic and payload shape of every
+// role-related and admin-related event so downstream audit-trail UIs,
+// dashboards, and indexers get a compile-time-checked regression signal if
+// the schema ever drifts.
+
+#[test]
+fn test_initialize_emits_event() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("contract_initialized",).into_val(&env),
+                ContractInitializedEvent { admin }
+                    .into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_set_role_emits_event() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::ComplianceOfficer);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("role_assigned",).into_val(&env),
+                RoleAssignedEvent {
+                    admin: admin.clone(),
+                    target: user1,
+                    role: Role::ComplianceOfficer,
+                }
+                .into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_remove_role_emits_event() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.remove_role(&admin, &user1);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("role_revoked",).into_val(&env),
+                RoleRevokedEvent {
+                    admin: admin.clone(),
+                    target: user1,
+                    role: Role::AssetManager,
+                }
+                .into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_transfer_admin_emits_event() {
+    let (env, client, admin, _user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.transfer_admin(&admin, &user2);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("admin_transfer_initiated",).into_val(&env),
+                AdminTransferInitiatedEvent {
+                    current_admin: admin,
+                    candidate: user2,
+                }
+                .into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_accept_admin_emits_event() {
+    let (env, client, admin, _user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.transfer_admin(&admin, &user2);
+    client.accept_admin(&user2);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("admin_transferred",).into_val(&env),
+                AdminTransferredEvent {
+                    previous_admin: admin,
+                    new_admin: user2,
+                }
+                .into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_renounce_admin_emits_event() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.renounce_admin(&admin);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("admin_renounced",).into_val(&env),
+                AdminTransferredEvent {
+                    previous_admin: admin.clone(),
+                    new_admin: admin,
+                }
+                .into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_pause_emits_event() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.pause(&admin);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("contract_paused",).into_val(&env),
+                ContractPausedEvent { admin }
+                    .into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_unpause_emits_event() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.pause(&admin);
+    client.unpause(&admin);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("contract_unpaused",).into_val(&env),
+                ContractUnpausedEvent { admin }
+                    .into_val(&env),
+            ),
+        ]
+    );
+}
+
 // ─── Supply cap amendment governance (#32) ────────────────────────────────────
 
 #[test]
@@ -1057,9 +1264,39 @@ fn test_supply_cap_lowering_below_supply_blocks_future_mints() {
     let (env, client, admin, _user1, user2) = setup();
     env.mock_all_auths();
 
+
+    // ── Pre-state snapshot (baseline) ───────────────────────────────────────
+    let initial_total_supply = client.get_total_supply();
+    let initial_balance_u1 = client.get_balance_of(&user1);
+    let initial_balance_u2 = client.get_balance_of(&user2);
+    let initial_role_u1 = client.get_role_of(&user1);
+    let initial_whitelist_u1 = client.is_whitelisted(&user1);
+    let initial_asset_status = client.get_asset_status();
+
+    // ── 1. CONFIG / INITIALIZATION ──────────────────────────────────────────
+    // First init to establish the admin.
+    client.initialize(&admin);
+
+    // Double init (already covered but re-assert in matrix)
+    let r = client.try_initialize(&admin);
+    assert_eq!(r, Err(Ok(Error::AlreadyInitialized)));
+
+    // Uninitialised contract calls (already covered, matrix adds negative amount variant)
+    // (tests above already assert NotInitialized)
+
+    // ── 2. ROLE MANAGEMENT INVALID INPUTS ───────────────────────────────────
+    // Non-admin caller
+    let r = client.try_set_role(&user1, &user2, &Role::AssetManager);
+    assert_eq!(r, Err(Ok(Error::Unauthorized)));
+
+    // Cannot assign Admin via set_role
+    let r = client.try_set_role(&admin, &user2, &Role::Admin);
+    assert_eq!(r, Err(Ok(Error::CannotAssignAdminRole)));
+
     client.initialize(&admin);
     client.set_asset_status(&admin, &AssetStatus::Active);
     client.whitelist_user(&admin, &user2);
+
 
     client.mint_asset(&admin, &user2, &1000);
     assert_eq!(client.get_total_supply(), 1000);
@@ -1174,6 +1411,31 @@ fn test_supply_cap_overflow_like_mint_keeps_state_consistent() {
 }
 
 // ─── Asset lifecycle invariants (#55) ─────────────────────────────────────────
+
+
+    // ── 7. ELIGIBILITY & FINAL STATE VERIFICATION ──────────────────────────
+    // Contract is paused → transfer eligibility must report false.
+    assert!(!client.check_transfer_eligibility(&user1, &user2, &100));
+
+    // Unpause to verify final transfer behaviour with Retired asset.
+    client.unpause(&admin);
+
+    // After unpause, check_transfer_eligibility does not check asset status —
+    // it only covers pause, whitelist, holding cap, and balance. So it now
+    // returns true for a whitelisted pair with sufficient balance.
+    assert!(client.check_transfer_eligibility(&user1, &user2, &100));
+
+    // But the actual transfer still fails because the asset is Retired.
+    let result = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(result, Err(Ok(Error::AssetNotActive)));
+
+    // ── FINAL STATE VERIFICATION: NO UNEXPECTED MUTATION ───────────────────
+    assert_eq!(client.get_total_supply(), initial_total_supply + 500);
+    assert_eq!(client.get_balance_of(&user1), initial_balance_u1 + 500);
+    assert_eq!(client.get_balance_of(&user2), initial_balance_u2);
+    assert_eq!(client.get_role_of(&user1), Role::AssetManager);
+    assert!(client.is_whitelisted(&user1));
+    assert_eq!(client.get_asset_status(), AssetStatus::Retired);
 
 #[test]
 fn test_asset_lifecycle_defaults_to_draft() {
@@ -1818,6 +2080,8 @@ fn test_supply_cap_proposed_and_amended_emit_events() {
     );
 }
 
+
+
 // ─── Holding cap event compatibility (#33) ───────────────────────────────────
 
 #[test]
@@ -1866,3 +2130,4 @@ fn test_holding_cap_proposed_and_amended_emit_events() {
         ]
     );
 }
+
