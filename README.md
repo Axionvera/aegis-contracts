@@ -56,8 +56,29 @@ value-encoding rules, and the no-real-user-data guarantee.
 ## Investor Tooling
 
 - [Investor Eligibility Read Helpers](docs/investor-eligibility.md) — compliance, holding-cap, and transfer eligibility read helpers for SDKs and dashboards
+
+- [Dashboard Integration Readiness Review](docs/dashboard-readiness-review.md) — API gaps, event limitations, and SEP-41 token compatibility risks for front-end integrations
+- [Dashboard Release Readiness Review (MVP)](docs/dashboard-release-readiness.md) — UI/UX gaps, test coverage requirements, and security flow risks for the dashboard application
+
+- [Requirement Traceability Mapping](docs/traceability-mapping.md) — mandatory traceability table format for contract changes and PRs
+- [Compliance Registry Reads and Indexing Strategy](docs/compliance-registry-reads.md) — supported point reads, event-indexed pagination, consistency guarantees, and dashboard/SDK boundaries
 - [Dashboard Integration Readiness Review](docs/dashboard-readiness-review.md) — API gaps, event limitations, and SEP-41 token compatibility risks for front-end integrations
 - [Dashboard Release Readiness Review (MVP)](docs/dashboard-release-readiness.md) — UI/UX gaps, test coverage requirements, and security flow risks for the dashboard application
 - [Dashboard Local Troubleshooting Guide](docs/dashboard-troubleshooting.md) — practical fixes for Freighter setup, RPC errors, and Next.js configuration
+
+## Contributor Guides
+
+- [Local Deployment Guide](docs/local-deployment.md) — deployment assumptions, environment variables, Makefile reference, Soroban CLI usage, and common errors
+- [Reviewer Checklist](docs/reviewer-checklist.md) — standardized quality and security checklist for PR reviewers
+- [Contributor Experience Review](docs/contributor-experience-review.md) — known onboarding friction and follow-up items
+
+## CI & Contributing
+
+- [Local Verification Command](docs/local-verification.md) — run `make verify` (fmt-check + clippy + test + build) before pushing to avoid failing CI
+- [Failing CI Response Guide](docs/failing-ci-guide.md) — how to reproduce and fix Rust, Soroban, Makefile, dependency, and workflow failures (failing checks can block approval)
+- [Payment-Period Conduct Note](docs/payment-period-conduct.md) — contributor expectations during paid periods: no spam, self-review, GrantFox evaluation, CI/testing
+- [Meaningful Implementation Checklist](docs/meaningful-implementation-checklist.md) — what counts as real contract work: behaviour, security, tests, events, acceptance criteria + reviewer checks
+
+
 ## Contributing
 Please see CONTRIBUTING.md for guidelines on how to submit pull requests, branch naming conventions, and testing requirements.
