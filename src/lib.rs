@@ -2,6 +2,7 @@
 pub mod admin;
 pub mod asset;
 pub mod compliance;
+pub mod eligibility;
 pub mod errors;
 pub mod holding;
 pub mod supply_cap;

@@ -36,5 +36,9 @@ Run the comprehensive test suite locally:
 - [Contract Error Code Standard](docs/error-codes.md) — standardized error codes for compliance, admin, minting, transfer, and storage failures, plus SDK/dashboard mapping guidance
 
 - [Investor Holding Restriction Checks](docs/investor-holding-restrictions.md) — per-investor holding cap workflow and enforcement
+
+## Investor Tooling
+
+- [Investor Eligibility Read Helpers](docs/investor-eligibility.md) — compliance, holding-cap, and transfer eligibility read helpers for SDKs and dashboards
 ## Contributing
 Please see CONTRIBUTING.md for guidelines on how to submit pull requests, branch naming conventions, and testing requirements.
