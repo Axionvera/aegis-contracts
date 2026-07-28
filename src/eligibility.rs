@@ -1,8 +1,7 @@
 use soroban_sdk::{contractimpl, contracttype, Address, Env};
 
 use crate::admin::is_paused;
-use crate::asset::{get_asset_status_internal, AssetStatus};
-use crate::compliance::{get_compliance_status, is_whitelisted, ComplianceStatus};
+use crate::compliance::{get_compliance_status, ComplianceStatus};
 use crate::holding::get_holding_cap;
 use crate::lifecycle::{get_asset_status, AssetStatus};
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey};
@@ -106,57 +105,7 @@ pub fn get_investor_eligibility(env: &Env, investor: &Address) -> InvestorEligib
 /// `check_transfer_restriction`. Callers that need to *explain* a `false`
 /// should use that entrypoint instead — see `docs/transfer-restrictions.md`.
 pub fn check_transfer_eligibility(env: &Env, from: &Address, to: &Address, amount: i128) -> bool {
-
     !crate::restrictions::evaluate_transfer(env, from, to, amount).is_blocked()
-
-    if amount <= 0 {
-        return false;
-    }
-    if is_paused(env) {
-        return false;
-    }
-
-    // Mirrors `asset.rs::transfer`, which rejects any transfer while the
-    // asset itself is not Active.
-    if get_asset_status_internal(env) != AssetStatus::Active {
-        return false;
-    }
-    // Both parties must be `Approved` under the compliance lifecycle.
-
-    if get_asset_status(env) != AssetStatus::Active {
-        return false;
-    }
-
-    if !is_whitelisted(env, from) {
-        return false;
-    }
-    if !is_whitelisted(env, to) {
-        return false;
-    }
-
-    let from_balance: i128 = env
-        .storage()
-        .persistent()
-        .get(&DataKey::Balance(from.clone()))
-        .unwrap_or(0);
-    if from_balance < amount {
-        return false;
-    }
-
-    let cap = get_holding_cap(env);
-    if cap > 0 {
-        let to_balance: i128 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Balance(to.clone()))
-            .unwrap_or(0);
-        if to_balance + amount > cap {
-            return false;
-        }
-    }
-
-    true
-
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────

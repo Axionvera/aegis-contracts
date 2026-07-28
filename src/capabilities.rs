@@ -1,8 +1,8 @@
 use soroban_sdk::{contractimpl, contracttype, vec, Env, String, Symbol, Vec};
 
 use crate::admin::is_paused;
-use crate::lifecycle::{get_asset_status, AssetStatus};
 use crate::holding::get_holding_cap;
+use crate::lifecycle::{get_asset_status, AssetStatus};
 use crate::supply_cap::get_supply_cap;
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey};
 
@@ -16,7 +16,7 @@ use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey};
 /// does not know about. Fields are append-only: never remove or repurpose an
 /// existing field or key (same stability contract as `docs/events.md` topics
 /// and `docs/error-codes.md` numeric codes).
-pub const CAPABILITY_SCHEMA_VERSION: u32 = 2;
+pub const CAPABILITY_SCHEMA_VERSION: u32 = 3;
 
 // ─── Response types ───────────────────────────────────────────────────────────
 
@@ -56,6 +56,8 @@ pub struct ComplianceCapabilities {
     pub whitelist_revocation: CapabilityStatus,
     /// Whitelisting many addresses in one invocation.
     pub batch_whitelisting: CapabilityStatus,
+    /// Updating many lifecycle statuses in one atomic invocation.
+    pub batch_status_updates: CapabilityStatus,
     /// Per-investor jurisdiction / accreditation tiers. The lifecycle models
     /// compliance *state*, not investor class, so regime-specific
     /// segmentation (Reg D vs. Reg S) remains off-chain only.
@@ -311,8 +313,8 @@ pub fn get_capabilities(env: &Env) -> ContractCapabilities {
             module_enabled: true,
             whitelist: CapabilityStatus::Supported,
             whitelist_revocation: CapabilityStatus::Supported,
-            // Tracked gas optimisation; today each address costs one call.
-            batch_whitelisting: CapabilityStatus::Planned,
+            batch_whitelisting: CapabilityStatus::Supported,
+            batch_status_updates: CapabilityStatus::Supported,
             // The lifecycle carries compliance state, not investor class.
             investor_tiers: CapabilityStatus::Unsupported,
             lifecycle_states: CapabilityStatus::Supported,
@@ -416,6 +418,9 @@ pub fn supports_capability(env: &Env, capability: &Symbol) -> CapabilityStatus {
     if *capability == Symbol::new(env, "batch_whitelisting") {
         return caps.compliance.batch_whitelisting;
     }
+    if *capability == Symbol::new(env, "compliance_batch_updates") {
+        return caps.compliance.batch_status_updates;
+    }
     if *capability == Symbol::new(env, "investor_tiers") {
         return caps.compliance.investor_tiers;
     }
@@ -518,6 +523,7 @@ pub fn get_capability_keys(env: &Env) -> Vec<Symbol> {
         Symbol::new(env, "whitelist"),
         Symbol::new(env, "whitelist_revocation"),
         Symbol::new(env, "batch_whitelisting"),
+        Symbol::new(env, "compliance_batch_updates"),
         Symbol::new(env, "investor_tiers"),
         Symbol::new(env, "compliance_lifecycle"),
         Symbol::new(env, "compliance_transitions"),

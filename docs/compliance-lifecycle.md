@@ -131,6 +131,16 @@ All lifecycle writes are blocked while the contract is paused
   `Unauthorized` (3000) for an unauthorized caller, and `ContractPaused`
   (3004) while paused.
 
+* **`batch_set_compliance_status(caller, updates)`** - the atomic batch
+  lifecycle entrypoint. Each update is a typed `ComplianceBatchUpdate`
+  (`user`, `new_status`). The contract validates the whole batch before
+  writing, then emits one `compliance_status_changed` event per address in
+  input order.
+
+  Empty batches return `0`. Duplicate users, illegal transitions, and
+  order-dependent intent are rejected without partial writes. See
+  [`compliance-batch-updates.md`](compliance-batch-updates.md).
+
 * **`whitelist_user(admin, user)`** — legacy alias for a transition to
   `Approved`. Retained for backwards compatibility. Idempotent: re-approving
   an already-`Approved` address succeeds without emitting a lifecycle event.

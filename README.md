@@ -51,6 +51,8 @@ value-encoding rules, and the no-real-user-data guarantee.
 - [Compliance Status Transitions](docs/compliance-status-transitions.md) — the approved/revoked/blocked/pending/unknown state machine, its transition matrix under authorised and unauthorised callers, and the invariant transition tests that guard it (audit readiness)
 
 
+- [Compliance Batch Updates](docs/compliance-batch-updates.md) - atomic multi-address lifecycle updates, edge cases, event ordering, and SDK/dashboard guidance
+
 ## Errors
 
 - [Contract Error Code Standard](docs/error-codes.md) — standardized error codes for compliance, admin, minting, transfer, and storage failures, plus SDK/dashboard mapping guidance
