@@ -1,4 +1,13 @@
+
+// The legacy `Events::publish((topic,), payload)` API is used intentionally:
+// docs/events.md freezes these (topic, payload) shapes as a stable off-chain
+// contract, and src/test.rs asserts them exactly. Migrating to the
+// `#[contractevent]` macro must preserve every emitted shape byte-for-byte.
+#![allow(deprecated)]
+use soroban_sdk::{contractimpl, contracttype, Address, Env};
+
 use soroban_sdk::{contractimpl, contracttype, panic_with_error, Address, Env};
+
 
 use crate::admin::{get_admin, require_not_paused};
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error};
@@ -38,9 +47,7 @@ pub fn get_holding_cap(env: &Env) -> i128 {
 /// Returns the pending proposed holding cap, or `None` if no proposal is
 /// outstanding.
 pub fn get_pending_holding_cap(env: &Env) -> Option<i128> {
-    env.storage()
-        .instance()
-        .get(&DataKey::HoldingCapCandidate)
+    env.storage().instance().get(&DataKey::HoldingCapCandidate)
 }
 
 /// Enforces the per-investor holding cap after `address` is credited with
@@ -155,8 +162,12 @@ impl AegisContract {
 
         let previous = get_holding_cap(&env);
 
-        env.storage().instance().remove(&DataKey::HoldingCapCandidate);
-        env.storage().instance().set(&DataKey::HoldingCap, &proposed);
+        env.storage()
+            .instance()
+            .remove(&DataKey::HoldingCapCandidate);
+        env.storage()
+            .instance()
+            .set(&DataKey::HoldingCap, &proposed);
 
         env.events().publish(
             ("holding_cap_amended",),
@@ -184,6 +195,8 @@ impl AegisContract {
         let had = env.storage().instance().has(&DataKey::HoldingCapCandidate);
         assert!(had, "No pending holding cap proposal to cancel");
 
-        env.storage().instance().remove(&DataKey::HoldingCapCandidate);
+        env.storage()
+            .instance()
+            .remove(&DataKey::HoldingCapCandidate);
     }
 }

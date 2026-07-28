@@ -49,6 +49,13 @@ name, never on struct declaration order or Rust type layout.**
 | `transfer`                    | `TransferEvent`              | `asset.rs`      | `transfer`                                      | `from: Address`, `to: Address`, `amount: i128` |
 | `yield_distributed`           | `YieldDistributedEvent`      | `asset.rs`      | `distribute_yield`                              | `caller: Address`, `amount: i128` |
 
+
+> **Compliance transitions:** the authorisation, blocked (paused), and
+> idempotence semantics that determine *when* `user_whitelisted` /
+> `whitelist_revoked` are emitted — and the invariant tests asserting that
+> rejected transitions emit nothing — are defined in
+> [`compliance-status-transitions.md`](compliance-status-transitions.md).
+
 | `asset_status_changed`        | `AssetStatusChangedEvent`    | `asset.rs`      | `set_asset_status`                              | `caller: Address`, `previous_status: AssetStatus`, `new_status: AssetStatus` |
 | `asset_metadata_updated`      | `AssetMetadataUpdatedEvent`  | `asset.rs`      | `update_asset_metadata`                         | `caller: Address`, `name: String`, `symbol: String`, `uri: String` |
 
@@ -57,6 +64,7 @@ name, never on struct declaration order or Rust type layout.**
 | `supply_cap_amended`          | `SupplyCapAmendedEvent`      | `supply_cap.rs` | `accept_supply_cap`                             | `admin: Address`, `previous_cap: i128`, `new_cap: i128` |
 | `holding_cap_proposed`        | `HoldingCapProposedEvent`    | `holding.rs`    | `propose_holding_cap`                           | `admin: Address`, `current_cap: i128`, `proposed_cap: i128` |
 | `holding_cap_amended`         | `HoldingCapAmendedEvent`     | `holding.rs`    | `accept_holding_cap`                            | `admin: Address`, `previous_cap: i128`, `new_cap: i128` |
+
 
 ## Scope notes
 

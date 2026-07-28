@@ -1,4 +1,7 @@
+
+
 #![cfg(test)]
+
 
 use super::*;
 use crate::asset::{AssetMintedEvent, AssetStatus, TransferEvent, YieldDistributedEvent};
@@ -14,7 +17,6 @@ use crate::capabilities::{
 };
 
 use crate::compliance::{UserWhitelistedEvent, WhitelistRevokedEvent};
-use crate::eligibility::InvestorEligibility;
 use crate::errors::Error;
 use crate::ContractInitializedEvent;
 use soroban_sdk::{
@@ -26,7 +28,7 @@ use soroban_sdk::{
 
 fn setup() -> (Env, AegisContractClient<'static>, Address, Address, Address) {
     let env = Env::default();
-    let contract_id = env.register_contract(None, AegisContract);
+    let contract_id = env.register(AegisContract, ());
     let client = AegisContractClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     let user1 = Address::generate(&env);
@@ -1181,7 +1183,7 @@ fn test_unpause_emits_event() {
 
 #[test]
 fn test_supply_cap_default_is_unbounded() {
-    let (env, client, admin, user1, user2) = setup();
+    let (env, client, admin, _user1, user2) = setup();
     env.mock_all_auths();
 
     client.initialize(&admin);
@@ -1264,10 +1266,12 @@ fn test_supply_cap_negative_rejected() {
     let (env, client, admin, _user1, _user2) = setup();
     env.mock_all_auths();
 
+
     client.initialize(&admin);
     let r = client.try_propose_supply_cap(&admin, &-1);
     assert!(r.is_err());
 }
+
 
 #[test]
 fn test_supply_cap_lowering_below_supply_blocks_future_mints() {
@@ -1284,15 +1288,21 @@ fn test_supply_cap_lowering_below_supply_blocks_future_mints() {
     let initial_asset_status = client.get_asset_status();
 
     // ── 1. CONFIG / INITIALIZATION ──────────────────────────────────────────
+
+    // Initialize the fresh deployment first, then re-assert the double-init
+    // guard for both the admin and an unrelated caller.
+    client.initialize(&admin);
+
     // First init to establish the admin.
     client.initialize(&admin);
 
     // Double init (already covered but re-assert in matrix)
+
     let r = client.try_initialize(&admin);
     assert_eq!(r, Err(Ok(Error::AlreadyInitialized)));
 
-    // Uninitialised contract calls (already covered, matrix adds negative amount variant)
-    // (tests above already assert NotInitialized)
+    let r = client.try_initialize(&user1);
+    assert_eq!(r, Err(Ok(Error::AlreadyInitialized)));
 
     // ── 2. ROLE MANAGEMENT INVALID INPUTS ───────────────────────────────────
     // Non-admin caller
@@ -1401,6 +1411,16 @@ fn test_supply_cap_overflow_like_mint_keeps_state_consistent() {
     client.propose_supply_cap(&admin, &i128::MAX);
     client.accept_supply_cap(&admin);
 
+
+    // Supply cap governance is blocked while paused.
+    let r = client.try_propose_supply_cap(&admin, &-1);
+    assert!(r.is_err());
+    let r = client.try_propose_supply_cap(&admin, &0);
+    assert!(r.is_err());
+
+    // Holding cap governance is also blocked while paused.
+    let r = client.try_propose_holding_cap(&admin, &-1);
+
     // Reach the practical numeric boundary first.
     let r = client.try_mint_asset(&admin, &user2, &i128::MAX);
     assert!(r.is_ok());
@@ -1410,6 +1430,7 @@ fn test_supply_cap_overflow_like_mint_keeps_state_consistent() {
     // Next mint would require i128::MAX + 1 internally (overflow-like path).
     // The call must fail and preserve the pre-call state.
     let r = client.try_mint_asset(&admin, &user2, &1);
+
     assert!(r.is_err());
     assert_eq!(client.get_total_supply(), i128::MAX);
     assert_eq!(client.get_balance_of(&user2), i128::MAX);
@@ -1418,9 +1439,58 @@ fn test_supply_cap_overflow_like_mint_keeps_state_consistent() {
 // ─── Asset lifecycle invariants (#55) ─────────────────────────────────────────
 
 
+    // While paused AND retired, even fully whitelisted parties cannot
+    // transfer; the point-in-time eligibility helper agrees.
+    assert!(!client.check_transfer_eligibility(&user1, &user2, &100));
+    let r = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::ContractPaused)));
+
+    // Unpause when not paused (after unpause)
+    client.unpause(&admin);
+    let r = client.try_unpause(&admin);
+    assert_eq!(r, Err(Ok(Error::NotPaused)));
+
+    // Cap validation now fires for the right reason: negative values and
+    // no-op proposals are rejected.
+    let r = client.try_propose_supply_cap(&admin, &-1);
+    assert!(r.is_err());
+    let r = client.try_propose_supply_cap(&admin, &0);
+    assert!(r.is_err());
+    let r = client.try_propose_holding_cap(&admin, &-1);
+    assert!(r.is_err());
+
+    // Retired is terminal: minting and transfers stay blocked even after the
+    // pause is lifted, even between whitelisted parties.
+    let r = client.try_mint_asset(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::AssetNotActive)));
+    let r = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::AssetNotActive)));
+
+    // ── FINAL STATE VERIFICATION: NO MUTATION FROM REJECTED INPUTS ──────────
+    // Sanity-check the captured baseline (fresh, pre-initialization deploy).
+    assert_eq!(initial_total_supply, 0);
+    assert_eq!(initial_balance_u1, 0);
+    assert_eq!(initial_balance_u2, 0);
+    assert_eq!(initial_role_u1, Role::None);
+    assert!(!initial_whitelist_u1);
+    assert_eq!(initial_asset_status, AssetStatus::Active);
+
+    // Only the deliberate, valid operations above are visible in state;
+    // every rejected invalid input left no trace.
+    assert_eq!(client.get_total_supply(), initial_total_supply + 500);
+    assert_eq!(client.get_balance_of(&user1), initial_balance_u1 + 500);
+    assert_eq!(client.get_balance_of(&user2), initial_balance_u2);
+    assert_eq!(client.get_role_of(&user1), Role::AssetManager);
+    assert!(client.is_whitelisted(&user1));
+    assert!(client.is_whitelisted(&user2));
+    assert_eq!(client.get_asset_status(), AssetStatus::Retired);
+}
+
+
     // ── 7. ELIGIBILITY & FINAL STATE VERIFICATION ──────────────────────────
     // Contract is paused → transfer eligibility must report false.
     assert!(!client.check_transfer_eligibility(&user1, &user2, &100));
+
 
     // Unpause to verify final transfer behaviour with Retired asset.
     client.unpause(&admin);
@@ -2065,6 +2135,517 @@ fn test_supply_cap_proposed_and_amended_emit_events() {
 }
 
 
+// ─── COMPLIANCE STATUS TRANSITION INVARIANTS (Audit Readiness) ────────────────
+//
+// Deterministic invariant coverage for compliance status transitions. The
+// full model — statuses, transition matrix, authorization rules, the blocked
+// overlay, event guarantees, and consistency invariants — is documented in
+// docs/compliance-status-transitions.md.
+//
+// The compliance registry is an address-keyed set (see
+// docs/compliance-registry-reads.md), so an investor's *compliance status* is
+// derived from observable contract state plus the transition history of the
+// address:
+//
+// | Status    | How the address got there                          | is_whitelisted |
+// |-----------|----------------------------------------------------|----------------|
+// | Unknown   | never targeted by any compliance call              | false          |
+// | Pending   | an approval attempt was rejected (still waiting)   | false          |
+// | Approved  | a committed `whitelist_user`                       | true           |
+// | Revoked   | a committed `revoke_whitelist` after Approved      | false          |
+//
+// "Blocked" is a global overlay rather than a per-address status: while the
+// contract is paused, EVERY compliance transition attempt reverts with
+// `ContractPaused`, regardless of address status or caller.
+//
+// Every matrix row runs against a fresh contract deployment, so results
+// depend only on the row's (status, action, caller) triple — never on test
+// execution order.
+
+/// The compliance statuses an investor address can be in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ComplianceStatus {
+    /// No record: the address has never been targeted by a compliance call.
+    Unknown,
+    /// Awaiting approval: an earlier approval attempt was rejected (wrong
+    /// caller or paused contract), so the address is still off the whitelist.
+    Pending,
+    /// On the whitelist: may receive and send assets.
+    Approved,
+    /// Removed from the whitelist after having been approved.
+    Revoked,
+}
+
+impl ComplianceStatus {
+    const ALL: [ComplianceStatus; 4] = [
+        ComplianceStatus::Unknown,
+        ComplianceStatus::Pending,
+        ComplianceStatus::Approved,
+        ComplianceStatus::Revoked,
+    ];
+
+    /// The whitelist flag observable on-chain for an address in this status.
+    fn is_approved(self) -> bool {
+        matches!(self, ComplianceStatus::Approved)
+    }
+}
+
+/// The two compliance transitions the contract exposes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ComplianceAction {
+    /// `whitelist_user` — drives an address towards `Approved`.
+    Approve,
+    /// `revoke_whitelist` — drives an address towards `Revoked`.
+    Revoke,
+}
+
+impl ComplianceAction {
+    const ALL: [ComplianceAction; 2] = [ComplianceAction::Approve, ComplianceAction::Revoke];
+
+    /// The whitelist flag this action commits on success.
+    fn result_is_approved(self) -> bool {
+        matches!(self, ComplianceAction::Approve)
+    }
+}
+
+/// Caller classes exercised against the transition matrix.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TransitionCaller {
+    /// The supreme admin — bypasses role checks.
+    Admin,
+    /// Compliance-scoped role — manages the whitelist.
+    ComplianceOfficer,
+    /// Combined compliance + asset role — also manages the whitelist.
+    EmergencyOfficer,
+    /// No role at all — must always be rejected.
+    NoRole,
+    /// A real but wrong-scoped role — must always be rejected.
+    AssetManager,
+}
+
+impl TransitionCaller {
+    const ALL: [TransitionCaller; 5] = [
+        TransitionCaller::Admin,
+        TransitionCaller::ComplianceOfficer,
+        TransitionCaller::EmergencyOfficer,
+        TransitionCaller::NoRole,
+        TransitionCaller::AssetManager,
+    ];
+
+    fn is_authorised(self) -> bool {
+        matches!(
+            self,
+            TransitionCaller::Admin
+                | TransitionCaller::ComplianceOfficer
+                | TransitionCaller::EmergencyOfficer
+        )
+    }
+}
+
+/// Normalized result of a compliance transition attempt.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TransitionOutcome {
+    /// The transition committed; state and events were written.
+    Committed,
+    /// The contract rejected the transition with a standardized error code.
+    Rejected(Error),
+    /// Any other abort (host error) — never expected in these tests.
+    Aborted,
+}
+
+/// A fresh deployment wired with the named actors the matrix needs.
+struct ComplianceFixture {
+    env: Env,
+    client: AegisContractClient<'static>,
+    admin: Address,
+    officer: Address,
+    emergency: Address,
+    manager: Address,
+    intruder: Address,
+    target: Address,
+}
+
+impl ComplianceFixture {
+    fn new() -> Self {
+        let env = Env::default();
+        let contract_id = env.register(AegisContract, ());
+        let client = AegisContractClient::new(&env, &contract_id);
+        let admin = Address::generate(&env);
+        let officer = Address::generate(&env);
+        let emergency = Address::generate(&env);
+        let manager = Address::generate(&env);
+        let intruder = Address::generate(&env);
+        let target = Address::generate(&env);
+
+        env.mock_all_auths();
+        client.initialize(&admin);
+        client.set_role(&admin, &officer, &Role::ComplianceOfficer);
+        client.set_role(&admin, &emergency, &Role::EmergencyOfficer);
+        client.set_role(&admin, &manager, &Role::AssetManager);
+
+        Self {
+            env,
+            client,
+            admin,
+            officer,
+            emergency,
+            manager,
+            intruder,
+            target,
+        }
+    }
+
+    fn caller_address(&self, caller: TransitionCaller) -> Address {
+        match caller {
+            TransitionCaller::Admin => self.admin.clone(),
+            TransitionCaller::ComplianceOfficer => self.officer.clone(),
+            TransitionCaller::EmergencyOfficer => self.emergency.clone(),
+            TransitionCaller::NoRole => self.intruder.clone(),
+            TransitionCaller::AssetManager => self.manager.clone(),
+        }
+    }
+
+    fn is_target_approved(&self) -> bool {
+        self.client.is_whitelisted(&self.target)
+    }
+
+    /// Events observed from the most recent top-level invocation.
+    fn last_invocation_event_count(&self) -> usize {
+        self.env.events().all().events().len()
+    }
+
+    /// Drives `target` into `status` using committed transitions — plus, for
+    /// `Pending`, one rejected approval attempt by an unauthorised caller.
+    fn drive_to_status(&self, status: ComplianceStatus) {
+        match status {
+            ComplianceStatus::Unknown => {}
+            ComplianceStatus::Pending => {
+                let outcome = self.attempt(ComplianceAction::Approve, TransitionCaller::NoRole);
+                assert_eq!(outcome, TransitionOutcome::Rejected(Error::Unauthorized));
+            }
+            ComplianceStatus::Approved => {
+                self.client.whitelist_user(&self.officer, &self.target);
+            }
+            ComplianceStatus::Revoked => {
+                self.client.whitelist_user(&self.officer, &self.target);
+                self.client.revoke_whitelist(&self.officer, &self.target);
+            }
+        }
+        assert_eq!(
+            self.is_target_approved(),
+            status.is_approved(),
+            "fixture failed to reach {status:?}"
+        );
+    }
+
+    /// Attempts `action` on `target` as `caller`, normalizing the result.
+    fn attempt(&self, action: ComplianceAction, caller: TransitionCaller) -> TransitionOutcome {
+        let caller = self.caller_address(caller);
+        let result = match action {
+            ComplianceAction::Approve => self.client.try_whitelist_user(&caller, &self.target),
+            ComplianceAction::Revoke => self.client.try_revoke_whitelist(&caller, &self.target),
+        };
+        match result {
+            Ok(Ok(())) => TransitionOutcome::Committed,
+            Err(Ok(e)) => TransitionOutcome::Rejected(e),
+            _ => TransitionOutcome::Aborted,
+        }
+    }
+}
+
+#[test]
+fn test_compliance_transition_matrix_deterministic() {
+    // The deterministic transition matrix: every (status, action, caller)
+    // combination against a fresh deployment.
+    //
+    // Authorised callers: every transition commits and the final status is
+    // exactly the action's target — Approve always lands on Approved
+    // (idempotent re-approval) and Revoke always lands off the whitelist
+    // (idempotent no-op for Unknown/Pending/Revoked).
+    //
+    // Unauthorised callers: every transition is rejected with `Unauthorized`
+    // and the address status is left exactly as it was — invalid transitions
+    // cannot create a bypass.
+    for status in ComplianceStatus::ALL {
+        for action in ComplianceAction::ALL {
+            for caller in TransitionCaller::ALL {
+                let fixture = ComplianceFixture::new();
+                fixture.drive_to_status(status);
+                let before = fixture.is_target_approved();
+
+                let outcome = fixture.attempt(action, caller);
+
+                if caller.is_authorised() {
+                    assert_eq!(
+                        outcome,
+                        TransitionOutcome::Committed,
+                        "{status:?} + {action:?} by {caller:?} must commit"
+                    );
+                    assert_eq!(
+                        fixture.is_target_approved(),
+                        action.result_is_approved(),
+                        "wrong final status: {status:?} + {action:?} by {caller:?}"
+                    );
+                } else {
+                    assert_eq!(
+                        outcome,
+                        TransitionOutcome::Rejected(Error::Unauthorized),
+                        "{status:?} + {action:?} by {caller:?} must be Unauthorized"
+                    );
+                    assert_eq!(
+                        fixture.is_target_approved(),
+                        before,
+                        "unauthorised {action:?} changed status {status:?} for {caller:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_compliance_transitions_blocked_when_paused() {
+    // The blocked overlay: while paused, EVERY transition attempt — from any
+    // status, with any action, by any caller, authorised or not — reverts
+    // with `ContractPaused`, because the pause guard runs before role checks.
+    // No event escapes a blocked transition and the address status is left
+    // unchanged. After unpause, authorised transitions work again, so the
+    // blocked overlay never becomes a permanent lockout.
+    for status in ComplianceStatus::ALL {
+        for action in ComplianceAction::ALL {
+            for caller in TransitionCaller::ALL {
+                let fixture = ComplianceFixture::new();
+                fixture.drive_to_status(status);
+                fixture.client.pause(&fixture.admin);
+                let before = fixture.is_target_approved();
+
+                let outcome = fixture.attempt(action, caller);
+
+                assert_eq!(
+                    outcome,
+                    TransitionOutcome::Rejected(Error::ContractPaused),
+                    "blocked {action:?} from {status:?} by {caller:?} must report ContractPaused"
+                );
+                assert_eq!(
+                    fixture.is_target_approved(),
+                    before,
+                    "blocked {action:?} changed status {status:?} for {caller:?}"
+                );
+                assert_eq!(
+                    fixture.last_invocation_event_count(),
+                    0,
+                    "blocked {action:?} from {status:?} by {caller:?} emitted an event"
+                );
+
+                // Unpause: the same transition now resolves by caller class.
+                fixture.client.unpause(&fixture.admin);
+                let outcome = fixture.attempt(action, caller);
+                if caller.is_authorised() {
+                    assert_eq!(
+                        outcome,
+                        TransitionOutcome::Committed,
+                        "post-unpause {action:?} by {caller:?} must commit"
+                    );
+                    assert_eq!(
+                        fixture.is_target_approved(),
+                        action.result_is_approved(),
+                        "post-unpause final status wrong: {status:?} + {action:?} by {caller:?}"
+                    );
+                } else {
+                    assert_eq!(
+                        outcome,
+                        TransitionOutcome::Rejected(Error::Unauthorized),
+                        "post-unpause {action:?} by {caller:?} must be Unauthorized"
+                    );
+                    assert_eq!(
+                        fixture.is_target_approved(),
+                        before,
+                        "post-unpause unauthorised {action:?} changed state for {caller:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_compliance_transition_events_have_exact_shape() {
+    let fixture = ComplianceFixture::new();
+
+    // Approve by a role caller (not the admin): the `caller` field must
+    // record the officer, proving the event tracks the actual authorizer.
+    fixture
+        .client
+        .whitelist_user(&fixture.officer, &fixture.target);
+    assert_eq!(
+        fixture.env.events().all(),
+        vec![
+            &fixture.env,
+            (
+                fixture.client.address.clone(),
+                ("user_whitelisted",).into_val(&fixture.env),
+                UserWhitelistedEvent {
+                    caller: fixture.officer.clone(),
+                    user: fixture.target.clone(),
+                }
+                .into_val(&fixture.env),
+            ),
+        ]
+    );
+
+    // Revoke by the emergency officer: same caller-tracking guarantee.
+    fixture
+        .client
+        .revoke_whitelist(&fixture.emergency, &fixture.target);
+    assert_eq!(
+        fixture.env.events().all(),
+        vec![
+            &fixture.env,
+            (
+                fixture.client.address.clone(),
+                ("whitelist_revoked",).into_val(&fixture.env),
+                WhitelistRevokedEvent {
+                    caller: fixture.emergency.clone(),
+                    user: fixture.target.clone(),
+                }
+                .into_val(&fixture.env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_rejected_compliance_transitions_emit_no_events() {
+    let fixture = ComplianceFixture::new();
+    fixture
+        .client
+        .whitelist_user(&fixture.officer, &fixture.target);
+    let outsider = Address::generate(&fixture.env);
+
+    // Unauthorised revoke of an approved address.
+    let outcome = fixture.attempt(ComplianceAction::Revoke, TransitionCaller::NoRole);
+    assert_eq!(outcome, TransitionOutcome::Rejected(Error::Unauthorized));
+    assert_eq!(fixture.last_invocation_event_count(), 0);
+
+    // Wrong-scope role approving a new address.
+    let result = fixture
+        .client
+        .try_whitelist_user(&fixture.manager, &outsider);
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(fixture.last_invocation_event_count(), 0);
+
+    // Paused (blocked) transitions of both kinds.
+    fixture.client.pause(&fixture.admin);
+    let outcome = fixture.attempt(
+        ComplianceAction::Revoke,
+        TransitionCaller::ComplianceOfficer,
+    );
+    assert_eq!(outcome, TransitionOutcome::Rejected(Error::ContractPaused));
+    assert_eq!(fixture.last_invocation_event_count(), 0);
+
+    let result = fixture.client.try_whitelist_user(&fixture.admin, &outsider);
+    assert_eq!(result, Err(Ok(Error::ContractPaused)));
+    assert_eq!(fixture.last_invocation_event_count(), 0);
+
+    // Soroban also discards events from reverted invocations: neither the
+    // approved target nor the untouched outsider changed status.
+    assert!(fixture.is_target_approved());
+    assert!(!fixture.client.is_whitelisted(&outsider));
+}
+
+#[test]
+fn test_failed_compliance_transitions_leave_state_consistent() {
+    let fixture = ComplianceFixture::new();
+    let bystander = Address::generate(&fixture.env);
+    let outsider = Address::generate(&fixture.env);
+
+    // Seed realistic state worth protecting.
+    fixture
+        .client
+        .whitelist_user(&fixture.officer, &fixture.target);
+    fixture.client.whitelist_user(&fixture.officer, &bystander);
+    fixture
+        .client
+        .mint_asset(&fixture.manager, &fixture.target, &700);
+    fixture
+        .client
+        .mint_asset(&fixture.manager, &bystander, &300);
+
+    // Snapshot every observable a failed transition could plausibly corrupt.
+    let target_approved = fixture.is_target_approved();
+    let bystander_approved = fixture.client.is_whitelisted(&bystander);
+    let outsider_approved = fixture.client.is_whitelisted(&outsider);
+    let target_balance = fixture.client.get_balance_of(&fixture.target);
+    let bystander_balance = fixture.client.get_balance_of(&bystander);
+    let total_supply = fixture.client.get_total_supply();
+    let officer_role = fixture.client.get_role_of(&fixture.officer);
+    let asset_status = fixture.client.get_asset_status();
+    let paused = fixture.client.is_paused();
+
+    // Wave 1: unauthorised callers of both kinds, both actions.
+    for caller in [TransitionCaller::NoRole, TransitionCaller::AssetManager] {
+        for action in ComplianceAction::ALL {
+            let outcome = fixture.attempt(action, caller);
+            assert_eq!(outcome, TransitionOutcome::Rejected(Error::Unauthorized));
+            assert_eq!(fixture.last_invocation_event_count(), 0);
+        }
+    }
+    let result = fixture
+        .client
+        .try_whitelist_user(&fixture.intruder, &outsider);
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    let result = fixture
+        .client
+        .try_revoke_whitelist(&fixture.manager, &outsider);
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+
+    // Wave 2: the blocked overlay, both actions, authorised callers.
+    fixture.client.pause(&fixture.admin);
+    let outcome = fixture.attempt(
+        ComplianceAction::Revoke,
+        TransitionCaller::ComplianceOfficer,
+    );
+    assert_eq!(outcome, TransitionOutcome::Rejected(Error::ContractPaused));
+    let result = fixture
+        .client
+        .try_whitelist_user(&fixture.emergency, &outsider);
+    assert_eq!(result, Err(Ok(Error::ContractPaused)));
+    fixture.client.unpause(&fixture.admin);
+
+    // Nothing moved — every rejected transition was atomic, and failures
+    // targeting one address never bled into a bystander's state.
+    assert_eq!(fixture.is_target_approved(), target_approved);
+    assert_eq!(
+        fixture.client.is_whitelisted(&bystander),
+        bystander_approved
+    );
+    assert_eq!(fixture.client.is_whitelisted(&outsider), outsider_approved);
+    assert_eq!(
+        fixture.client.get_balance_of(&fixture.target),
+        target_balance
+    );
+    assert_eq!(fixture.client.get_balance_of(&bystander), bystander_balance);
+    assert_eq!(fixture.client.get_total_supply(), total_supply);
+    assert_eq!(fixture.client.get_role_of(&fixture.officer), officer_role);
+    assert_eq!(fixture.client.get_asset_status(), asset_status);
+    assert_eq!(fixture.client.is_paused(), paused);
+
+    // The registry is not wedged by the failures: valid transitions still go
+    // through for the same addresses.
+    fixture
+        .client
+        .revoke_whitelist(&fixture.officer, &fixture.target);
+    assert!(!fixture.is_target_approved());
+    fixture.client.whitelist_user(&fixture.emergency, &outsider);
+    assert!(fixture.client.is_whitelisted(&outsider));
+
+    // Revocation freezes the account but never destroys its balance.
+    assert_eq!(
+        fixture.client.get_balance_of(&fixture.target),
+        target_balance
+    );
+
+
 
 // ─── Holding cap event compatibility (#33) ───────────────────────────────────
 
@@ -2113,5 +2694,115 @@ fn test_holding_cap_proposed_and_amended_emit_events() {
             ),
         ]
     );
+
 }
 
+#[test]
+fn test_compliance_status_lifecycle_invariants() {
+    // A full state-machine walk: Unknown → Pending → Approved → Revoked →
+    // Re-approved, asserting the transition invariants that prevent compliance
+    // bypass and lockout bugs at every hop.
+    let fixture = ComplianceFixture::new();
+    let investor = fixture.target.clone();
+    let recipient = Address::generate(&fixture.env);
+
+    // ── Unknown ───────────────────────────────────────────────────────────
+    // Never targeted: off the whitelist, and assets cannot be minted to it.
+    assert_eq!(
+        fixture.is_target_approved(),
+        ComplianceStatus::Unknown.is_approved()
+    );
+    let result = fixture
+        .client
+        .try_mint_asset(&fixture.manager, &investor, &100);
+    assert_eq!(result, Err(Ok(Error::ReceiverNotWhitelisted)));
+
+    // ── Pending ───────────────────────────────────────────────────────────
+    // A rejected approval attempt (unauthorised caller) leaves the address
+    // off the whitelist — it is pending, and minting stays blocked.
+    let outcome = fixture.attempt(ComplianceAction::Approve, TransitionCaller::NoRole);
+    assert_eq!(outcome, TransitionOutcome::Rejected(Error::Unauthorized));
+    assert!(!fixture.is_target_approved());
+    let result = fixture
+        .client
+        .try_mint_asset(&fixture.manager, &investor, &100);
+    assert_eq!(result, Err(Ok(Error::ReceiverNotWhitelisted)));
+
+    // A blocked approval attempt while paused also leaves it pending.
+    fixture.client.pause(&fixture.admin);
+    let outcome = fixture.attempt(
+        ComplianceAction::Approve,
+        TransitionCaller::ComplianceOfficer,
+    );
+    assert_eq!(outcome, TransitionOutcome::Rejected(Error::ContractPaused));
+    assert!(!fixture.is_target_approved());
+    fixture.client.unpause(&fixture.admin);
+
+    // ── Approved ──────────────────────────────────────────────────────────
+    // A committed approval flips the status and unlocks receiving.
+    fixture.client.whitelist_user(&fixture.officer, &investor);
+    assert!(fixture.is_target_approved());
+    fixture.client.mint_asset(&fixture.manager, &investor, &100);
+    assert_eq!(fixture.client.get_balance_of(&investor), 100);
+
+    // ── Revoked ───────────────────────────────────────────────────────────
+    // Revocation locks sending AND receiving for the investor...
+    fixture.client.revoke_whitelist(&fixture.officer, &investor);
+    assert!(!fixture.is_target_approved());
+    fixture.client.whitelist_user(&fixture.officer, &recipient);
+
+    let result = fixture
+        .client
+        .try_mint_asset(&fixture.manager, &investor, &50);
+    assert_eq!(result, Err(Ok(Error::ReceiverNotWhitelisted)));
+    let result = fixture.client.try_transfer(&investor, &recipient, &50);
+    assert_eq!(result, Err(Ok(Error::SenderNotWhitelisted)));
+    // ...while the balance itself is preserved, not destroyed.
+    assert_eq!(fixture.client.get_balance_of(&investor), 100);
+
+    // ── Re-approved ───────────────────────────────────────────────────────
+    // Revocation is not a permanent lockout: an authorised caller can
+    // re-approve, restoring full movement rights.
+    fixture.client.whitelist_user(&fixture.emergency, &investor);
+    assert!(fixture.is_target_approved());
+    fixture.client.transfer(&investor, &recipient, &40);
+
+    assert_eq!(fixture.client.get_balance_of(&investor), 60);
+    assert_eq!(fixture.client.get_balance_of(&recipient), 40);
+    assert_eq!(fixture.client.get_total_supply(), 100);
+}
+
+#[test]
+fn test_compliance_transitions_rejected_after_officer_role_revoked() {
+    // Wrong-caller nuance: the moment the admin strips a compliance officer's
+    // role, that officer's transitions become invalid — rejected, state
+    // unchanged, no event — even for addresses they personally approved.
+    let fixture = ComplianceFixture::new();
+    fixture
+        .client
+        .whitelist_user(&fixture.officer, &fixture.target);
+    assert!(fixture.is_target_approved());
+    let outsider = Address::generate(&fixture.env);
+
+    fixture.client.remove_role(&fixture.admin, &fixture.officer);
+
+    let outcome = fixture.attempt(
+        ComplianceAction::Revoke,
+        TransitionCaller::ComplianceOfficer,
+    );
+    assert_eq!(outcome, TransitionOutcome::Rejected(Error::Unauthorized));
+    assert!(fixture.is_target_approved());
+    assert_eq!(fixture.last_invocation_event_count(), 0);
+
+    let result = fixture
+        .client
+        .try_whitelist_user(&fixture.officer, &outsider);
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert!(!fixture.client.is_whitelisted(&outsider));
+
+    // The admin can still act — removing one officer never wedges the registry.
+    fixture
+        .client
+        .revoke_whitelist(&fixture.admin, &fixture.target);
+    assert!(!fixture.is_target_approved());
+}

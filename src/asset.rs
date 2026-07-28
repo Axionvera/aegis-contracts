@@ -1,3 +1,8 @@
+// The legacy `Events::publish((topic,), payload)` API is used intentionally:
+// docs/events.md freezes these (topic, payload) shapes as a stable off-chain
+// contract, and src/test.rs asserts them exactly. Migrating to the
+// `#[contractevent]` macro must preserve every emitted shape byte-for-byte.
+#![allow(deprecated)]
 use soroban_sdk::{contractimpl, contracttype, Address, Env, String};
 
 use crate::admin::{require_any_role, require_not_paused, require_role};
@@ -95,10 +100,16 @@ fn transition_is_valid(from: &AssetStatus, to: &AssetStatus) -> bool {
 
     match from {
         AssetStatus::Active => {
-            matches!(to, AssetStatus::Paused | AssetStatus::Retired | AssetStatus::Blocked)
+            matches!(
+                to,
+                AssetStatus::Paused | AssetStatus::Retired | AssetStatus::Blocked
+            )
         }
         AssetStatus::Paused => {
-            matches!(to, AssetStatus::Active | AssetStatus::Retired | AssetStatus::Blocked)
+            matches!(
+                to,
+                AssetStatus::Active | AssetStatus::Retired | AssetStatus::Blocked
+            )
         }
         AssetStatus::Retired => false,
         AssetStatus::Blocked => matches!(to, AssetStatus::Active | AssetStatus::Retired),
@@ -185,7 +196,9 @@ impl AegisContract {
 
         env.storage().instance().set(&DataKey::AssetName, &name);
         env.storage().instance().set(&DataKey::AssetSymbol, &symbol);
-        env.storage().instance().set(&DataKey::AssetMetadataUri, &uri);
+        env.storage()
+            .instance()
+            .set(&DataKey::AssetMetadataUri, &uri);
 
         env.events().publish(
             ("asset_metadata_updated",),
@@ -227,7 +240,6 @@ impl AegisContract {
         // This is a compliance-sensitive control that applies to every mint,
         // including those performed by the admin/AssetManager.
         holding::enforce_holding_cap(&env, &to, amount);
-
 
         let mut balance: i128 = env
             .storage()

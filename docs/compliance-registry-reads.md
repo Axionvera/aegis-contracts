@@ -42,6 +42,12 @@ application configuration. The event schema is documented in
 | `user_whitelisted(caller, user)` | add `user` (idempotently) |
 | `whitelist_revoked(caller, user)` | remove or mark `user` inactive |
 
+For the full compliance **status transition model** behind these events —
+approved, revoked, blocked, pending, and unknown statuses, the deterministic
+transition matrix under authorised and unauthorised callers, and the
+invariant transition tests that guard them — see
+[`compliance-status-transitions.md`](compliance-status-transitions.md).
+
 Only events from **successful, committed transactions** are valid. Soroban
 rolls back events from failed invocations. Store the ledger/transaction/event
 identifier and contract ID with every record so ingestion is idempotent and
