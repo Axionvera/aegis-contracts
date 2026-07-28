@@ -68,7 +68,8 @@ Your PR description must include:
 ### Required elements:
 - [ ] **Description** — clear explanation of what changed and why
 - [ ] **Related Issues** — link to the issue this PR addresses (e.g., `Fixes #123`)
-- [ ] **Traceability Mapping Table** — maps every acceptance criterion to implementation, storage changes, events, tests, and security controls
+- [ ] **Completion Table** — maps every acceptance criterion to a status (Complete/Partial/Not Met), implementation evidence, and test evidence (see [Completion Table Format](./traceability-mapping.md#completion-table-format))
+- [ ] **Traceability Mapping Table** — detailed map of acceptance criteria to implementation, storage changes, events, tests, and security controls (for complex PRs)
 - [ ] **Type of Change** — select appropriate category (bug fix, new feature, breaking change, documentation, chore)
 - [ ] **Review Checklist** — all items checked (see below)
 
@@ -77,6 +78,7 @@ Your PR description must include:
 - [ ] Code follows Rust and Soroban formatting standards (`cargo fmt`)
 - [ ] No new warnings (`cargo clippy`)
 - [ ] Added/updated tests for new logic, all tests pass (`cargo test`)
+- [ ] **Completion Table** filled out with status per criterion
 - [ ] **Traceability Mapping** filled out in PR description
 - [ ] Reviewed against [Reviewer Checklist](./reviewer-checklist.md)
 - [ ] Verified compliance with [Legal Boundary Disclaimer](./legal-boundary-disclaimer.md)
@@ -87,9 +89,19 @@ Your PR description must include:
 
 ## 4. Acceptance Criteria Mapping
 
-Every non-trivial PR must include a traceability table in its description. This maps how each requirement from the issue is satisfied in the codebase.
+Every PR must include a completion table in its description mapping each acceptance criterion to its status and evidence. For complex PRs, also include a detailed traceability table.
 
-### Table format:
+### Completion Table format:
+
+| Acceptance Criterion | Status | Implementation Evidence | Test Evidence |
+| :--- | :---: | :--- | :--- |
+| **AC 1**: Brief description | Complete | `fn name()` — link or description | `test_name` — file:line |
+| **AC 2**: ... | Partial | Reason and what was done | Tests that exist |
+| **AC 3**: ... | Not Met | Explanation | N/A |
+
+**Status** must be one of: **Complete** (fully satisfied), **Partial** (known gaps with explanation), or **Not Met** (not addressed with rationale).
+
+### Detailed Traceability Table (for complex PRs):
 
 | Acceptance Criteria | Implementation (Functions/Logic) | Storage & State Changes | Events Emitted | Test Coverage (File:Line) | Security/Safety Controls |
 | :--- | :--- | :--- | :--- | :--- | :--- |
@@ -100,8 +112,9 @@ Every non-trivial PR must include a traceability table in its description. This 
 - **Audit Readiness** — clear roadmap for security auditors
 - **Review Efficiency** — helps maintainers locate relevant logic and tests
 - **Protocol Stability** — ensures no edge cases or security controls are missed
+- **Payment Readiness** — enables contributors to self-evaluate before payment day
 
-📖 **Full guide:** [Requirement Traceability Mapping](./traceability-mapping.md)
+📖 **Full guide:** [Requirement Traceability Mapping](./traceability-mapping.md) — includes completion table format, status definitions, and incomplete criteria handling
 
 ---
 
