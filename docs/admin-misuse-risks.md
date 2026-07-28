@@ -65,6 +65,28 @@ This document catalogues the risks associated with admin privileges in the Aegis
 - **Event-based monitoring**: Role assignment and revocation events enable off-chain tracking of active roles.
 - **No automatic expiry**: Soroban does not support time-based storage expiry for persistent entries, so roles persist until manually revoked.
 
+### 7. Emergency Pause Misuse
+
+**Risk**: An EmergencyOfficer can pause the contract at any time, effectively halting all operations (minting, transfers, compliance changes). This could be used to hold the protocol hostage or cause reputational damage.
+
+**Mitigations**:
+- **Asymmetric control**: The EmergencyOfficer can pause but **cannot unpause**. Only the admin can restore normal operations.
+- **Event emission**: Pause events (`contract_paused`, `contract_unpaused`) enable real-time alerting.
+- **Limited scope**: The EmergencyOfficer role cannot mint, whitelist, or transfer admin — it can only pause.
+
+**Residual Risk**: A compromised EmergencyOfficer key can cause a denial-of-service by pausing the contract. The admin must unpause to restore operations. If the admin key is also unavailable, the protocol is permanently halted.
+
+### 8. Admin Pause Indefinite Hold
+
+**Risk**: The admin can pause the contract and refuse to unpause, effectively freezing all token operations indefinitely.
+
+**Mitigations**:
+- **Documentation**: The pause mechanism is documented and transparent.
+- **Off-chain governance**: Token holders can coordinate off-chain to demand unpause or migrate to a new contract.
+- **Admin transfer**: A compromised admin can be replaced via the 2-step admin transfer (if the admin key is not itself compromised).
+
+**Residual Risk**: If the admin key is compromised and the attacker pauses the contract, the only recovery is to deploy a new contract and migrate assets. This underscores the importance of securing the admin key with hardware wallets or multi-sig.
+
 ## Recommendations for Contract Deployers
 
 1. **Use a hardware wallet or multi-sig** for the admin key. Never store the admin secret key in software wallets or hot storage.
@@ -84,3 +106,5 @@ This document catalogues the risks associated with admin privileges in the Aegis
 | Admin renunciation | Medium | Low | Documentation, event alerting |
 | Stale role assignments | Medium | Medium | Proactive revocation, event monitoring |
 | Role stacking confusion | Low | Low | Single-role-per-address design |
+| Emergency pause misuse | Medium | Low | Asymmetric unpause (admin only), event monitoring |
+| Admin indefinite pause hold | High | Low | Off-chain governance, admin transfer mechanism |

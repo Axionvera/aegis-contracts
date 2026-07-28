@@ -13,13 +13,27 @@
 * `accept_admin(env, candidate)`: Completes a 2-step admin transfer. Only the pending candidate can call this. Emits `AdminTransferredEvent`.
 * `renounce_admin(env, admin)`: The admin renounces their own role. Irreversible. Emits `AdminTransferredEvent`.
 
+## Emergency Pause (admin.rs)
+
+* `pause(env, caller)`: Pauses the contract. Requires Admin or EmergencyOfficer role. Reverts if already paused. Emits `ContractPausedEvent`.
+* `unpause(env, caller)`: Unpauses the contract. Requires Admin role only. Reverts if not paused. Emits `ContractUnpausedEvent`.
+* `is_paused(env)`: Returns whether the contract is currently paused. Always available.
+
 ## Compliance (compliance.rs)
 
-* `whitelist_user(env, admin, user)`: Adds `user` to the persistent compliance map. Requires ComplianceOfficer role (or Admin).
-* `revoke_whitelist(env, admin, user)`: Removes `user` from the compliance whitelist. Requires ComplianceOfficer role (or Admin).
+* `whitelist_user(env, admin, user)`: Adds `user` to the persistent compliance map. Requires ComplianceOfficer role (or Admin). Blocked when paused.
+* `revoke_whitelist(env, admin, user)`: Removes `user` from the compliance whitelist. Requires ComplianceOfficer role (or Admin). Blocked when paused.
 
 ## Asset Operations (asset.rs)
 
-* `mint_asset(env, admin, to, amount)`: Mints `amount` to `to`. Requires AssetManager role (or Admin). Reverts if `to` is not whitelisted.
-* `transfer(env, from, to, amount)`: Moves `amount` between addresses. Requires `from` auth. Reverts if either `from` or `to` is not whitelisted, or if `from` has an insufficient balance.
-* `distribute_yield(env, admin, amount)`: Triggers a dividend yield event for off-chain indexing. Requires AssetManager role (or Admin).
+* `mint_asset(env, admin, to, amount)`: Mints `amount` to `to`. Requires AssetManager role (or Admin). Reverts if `to` is not whitelisted. Blocked when paused.
+* `transfer(env, from, to, amount)`: Moves `amount` between addresses. Requires `from` auth. Reverts if either `from` or `to` is not whitelisted, or if `from` has an insufficient balance. Blocked when paused.
+* `distribute_yield(env, admin, amount)`: Triggers a dividend yield event for off-chain indexing. Requires AssetManager role (or Admin). Blocked when paused.
+
+## Read Functions
+
+These functions are always available, even when the contract is paused:
+
+* `get_balance_of(env, address)`: Returns the token balance for an address (defaults to 0).
+* `get_total_supply(env)`: Returns the global total supply (defaults to 0).
+* `is_whitelisted(env, user)`: Returns whether an address is on the compliance whitelist.

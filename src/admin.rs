@@ -2,6 +2,23 @@ use soroban_sdk::{contractimpl, contracttype, Address, Env};
 
 use crate::{AegisContract, DataKey, Role};
 
+// ─── Pause helpers ────────────────────────────────────────────────────────────
+
+/// Returns `true` if the contract is currently paused.
+pub fn is_paused(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::Paused)
+        .unwrap_or(false)
+}
+
+/// Asserts that the contract is **not** paused. Reverts with a descriptive
+/// message if the contract is paused. Call this at the top of every
+/// state-changing operation that should be blocked during a pause.
+pub fn require_not_paused(env: &Env) {
+    assert!(!is_paused(env), "Contract is paused");
+}
+
 // ─── Events ───────────────────────────────────────────────────────────────────
 
 #[contracttype]
@@ -32,6 +49,18 @@ pub struct AdminTransferInitiatedEvent {
 pub struct AdminTransferredEvent {
     pub previous_admin: Address,
     pub new_admin: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ContractPausedEvent {
+    pub admin: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ContractUnpausedEvent {
+    pub admin: Address,
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -71,7 +100,9 @@ pub fn require_role(env: &Env, caller: &Address, required: Role) {
 #[contractimpl]
 impl AegisContract {
     /// Assigns a role to `target`. Only the supreme admin can call this.
+    /// Blocked when the contract is paused.
     pub fn set_role(env: Env, admin: Address, target: Address, role: Role) {
+        require_not_paused(&env);
         admin.require_auth();
         assert_eq!(
             admin,
@@ -103,7 +134,9 @@ impl AegisContract {
 
     /// Revokes the role from `target`, setting it to Role::None.
     /// Only the supreme admin can call this.
+    /// Blocked when the contract is paused.
     pub fn remove_role(env: Env, admin: Address, target: Address) {
+        require_not_paused(&env);
         admin.require_auth();
         assert_eq!(
             admin,
@@ -135,7 +168,9 @@ impl AegisContract {
 
     /// Initiates a 2-step admin transfer. Sets `candidate` as the pending new
     /// admin. Only the current admin can call this.
+    /// Blocked when the contract is paused.
     pub fn transfer_admin(env: Env, admin: Address, candidate: Address) {
+        require_not_paused(&env);
         admin.require_auth();
         assert_eq!(
             admin,
@@ -158,7 +193,9 @@ impl AegisContract {
 
     /// Completes a 2-step admin transfer. The `candidate` must call this to
     /// accept the role. Only the pending candidate can call this.
+    /// Blocked when the contract is paused.
     pub fn accept_admin(env: Env, candidate: Address) {
+        require_not_paused(&env);
         candidate.require_auth();
 
         let stored_candidate: Address = env
@@ -199,7 +236,9 @@ impl AegisContract {
 
     /// The current admin can renounce their own admin role. This is an
     /// irreversible action — use with caution.
+    /// Blocked when the contract is paused.
     pub fn renounce_admin(env: Env, admin: Address) {
+        require_not_paused(&env);
         admin.require_auth();
         assert_eq!(
             admin,
@@ -218,6 +257,50 @@ impl AegisContract {
                 previous_admin: admin,
                 new_admin: admin, // Self-renounced
             },
+        );
+    }
+
+    /// Returns whether the contract is currently paused.
+    pub fn is_paused(env: Env) -> bool {
+        is_paused(&env)
+    }
+
+    /// Pauses the contract. When paused, all state-changing operations
+    /// (minting, transfers, compliance changes) are blocked. Read functions
+    /// remain available.
+    ///
+    /// Only the admin or an EmergencyOfficer can pause the contract.
+    pub fn pause(env: Env, caller: Address) {
+        caller.require_auth();
+        require_role(&env, &caller, Role::EmergencyOfficer);
+
+        assert!(!is_paused(&env), "Contract is already paused");
+
+        env.storage().instance().set(&DataKey::Paused, &true);
+
+        env.events()
+            .publish(("contract_paused",), ContractPausedEvent { admin: caller });
+    }
+
+    /// Unpauses the contract, restoring normal operations.
+    ///
+    /// Only the admin can unpause — this ensures that a compromised
+    /// EmergencyOfficer cannot unpause after a legitimate admin-initiated pause.
+    pub fn unpause(env: Env, caller: Address) {
+        caller.require_auth();
+        assert_eq!(
+            caller,
+            get_admin(&env),
+            "Unauthorized: only admin can unpause"
+        );
+
+        assert!(is_paused(&env), "Contract is not paused");
+
+        env.storage().instance().set(&DataKey::Paused, &false);
+
+        env.events().publish(
+            ("contract_unpaused",),
+            ContractUnpausedEvent { admin: caller },
         );
     }
 }
