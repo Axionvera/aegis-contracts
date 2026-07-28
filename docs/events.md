@@ -87,6 +87,11 @@ SDKs and indexers that need to record restricted-transfer attempts for audit
 purposes should watch for these error codes on failed `transfer`/`mint_asset`
 simulations or failed transaction results, not for an event.
 
+This is advertised on-chain: `get_capabilities()` reports
+`events.transfer_restriction_events` as `Unsupported` (not `Planned`), so a
+client can tell the difference between "not built yet" and "structurally
+impossible, stop waiting for it". See [`capabilities.md`](capabilities.md).
+
 ## Compatibility tests
 
 Every event above has a corresponding test in [`src/test.rs`](../src/test.rs)

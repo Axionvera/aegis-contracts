@@ -78,7 +78,10 @@ pub struct AssetMetadataUpdatedEvent {
     pub uri: String,
 }
 
-fn get_asset_status_internal(env: &Env) -> AssetStatus {
+/// Returns the current asset lifecycle status, defaulting to `Active` when
+/// none has been recorded. Pure read — shared with the capability module so
+/// both report the same lifecycle state.
+pub fn get_asset_status_internal(env: &Env) -> AssetStatus {
     env.storage()
         .instance()
         .get(&DataKey::AssetStatus)

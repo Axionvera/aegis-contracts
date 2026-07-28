@@ -10,6 +10,7 @@ This document evaluates the readiness of the Aegis RWA Contracts for integration
 | **Portfolio & Balance View** | Fetch user balance, holding capacity, and pause state. | `get_investor_eligibility()` provides a composed, read-only response with balance, whitelist status, remaining holding capacity, and global pause state. | ✅ Supported |
 | **Pre-flight Transfer Validation** | Check if a user's transfer will fail before submission. | `check_transfer_eligibility()` provides point-in-time checks for whitelist status, pause state, and holding caps. | ✅ Supported |
 | **Asset Statistics** | Display the total minted supply of the asset. | `get_total_supply()` | ✅ Supported |
+| **Feature Gating / Capability Discovery** | Determine which contract features exist before rendering UI, so unsupported controls are hidden rather than failing at submission. | `get_capabilities()`, `supports_capability()`, and `get_capability_keys()` expose a read-only descriptor covering compliance, minting, transfer, pause, metadata, event, and version support, with `Supported`/`Planned`/`Unsupported` states. See [`capabilities.md`](capabilities.md). | ✅ Supported |
 | **Asset Token Metadata** | Display the token's name, symbol, and decimal precision. | *Missing.* No endpoints exist for `name()`, `symbol()`, or `decimals()`. | ❌ **Blocker** |
 | **Third-Party Integrations / Approvals** | Allow other smart contracts or protocols to spend tokens on the user's behalf. | *Missing.* No `approve()`, `transfer_from()`, or `allowance()` endpoints exist. The contract is not fully SEP-41 compliant. | ❌ **Blocker** |
 
@@ -31,5 +32,5 @@ The Aegis Contracts do **not** implement the standard Soroban Token Interface (S
 
 To unblock dashboard integrations and minimize cross-repo delivery risk, the following issues should be prioritized:
 
-1. **Implement SEP-41 Compatibility:** Refactor the contract to fully implement the Soroban `token::Interface` (including `approve`, `transfer_from`, `allowance`, `decimals`, `name`, and `symbol`).
+1. **Implement SEP-41 Compatibility:** Refactor the contract to fully implement the Soroban `token::Interface` (including `approve`, `transfer_from`, `allowance`, `decimals`, `name`, and `symbol`). Until then, these gaps are machine-discoverable: `get_capabilities()` reports `sep41_token_interface`, `transfers.allowances`, `transfers.transfer_from`, and `metadata.decimals` as `Planned`, so a dashboard can hide or disable the corresponding controls instead of hardcoding the gap. Flip each to `Supported` in `capabilities.rs` as it ships.
 2. **Standardize Error Code Parsing:** Ensure the dashboard's RPC client includes a robust error-mapping layer to translate `Error(Contract, 4000)` into a user-friendly "Recipient has not completed KYC" message, as detailed in `error-codes.md`.
