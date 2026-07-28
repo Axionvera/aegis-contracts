@@ -1,7 +1,8 @@
 use soroban_sdk::{contractimpl, contracttype, Address, Env};
 
 use crate::admin::is_paused;
-use crate::compliance::is_whitelisted;
+use crate::asset::{get_asset_status_internal, AssetStatus};
+use crate::compliance::{get_compliance_status, is_whitelisted, ComplianceStatus};
 use crate::holding::get_holding_cap;
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey};
 
@@ -17,8 +18,14 @@ use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey};
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InvestorEligibility {
-    /// Whether the investor is on the compliance whitelist.
+    /// Whether the investor is compliance-approved. Derived from
+    /// `compliance_status`: `true` only for `ComplianceStatus::Approved`.
+    /// Retained for backwards compatibility — prefer `compliance_status`,
+    /// which distinguishes `Unknown` / `Pending` / `Revoked` / `Blocked`.
     pub whitelisted: bool,
+    /// The investor's full compliance lifecycle state. See
+    /// `docs/compliance-lifecycle.md`.
+    pub compliance_status: ComplianceStatus,
     /// Whether the contract is currently paused. When `true`, no transfer or
     /// mint can succeed regardless of any other field on this struct.
     pub contract_paused: bool,
@@ -44,7 +51,8 @@ pub struct InvestorEligibility {
 /// Builds the eligibility snapshot for `investor`. Pure read — issues no
 /// storage writes and never panics.
 pub fn get_investor_eligibility(env: &Env, investor: &Address) -> InvestorEligibility {
-    let whitelisted = is_whitelisted(env, investor);
+    let compliance_status = get_compliance_status(env, investor);
+    let whitelisted = compliance_status.is_approved();
     let contract_paused = is_paused(env);
     let balance: i128 = env
         .storage()
@@ -62,6 +70,7 @@ pub fn get_investor_eligibility(env: &Env, investor: &Address) -> InvestorEligib
 
     InvestorEligibility {
         whitelisted,
+        compliance_status,
         contract_paused,
         balance,
         holding_cap,
@@ -72,10 +81,11 @@ pub fn get_investor_eligibility(env: &Env, investor: &Address) -> InvestorEligib
 }
 
 /// Returns whether a transfer of `amount` from `from` to `to` would currently
-/// pass every check `transfer()` performs — pause state, compliance
-/// whitelist for both parties, the receiver's holding cap, and the sender's
-/// balance — evaluated against the current ledger state. Pure read — issues
-/// no storage writes, requires no authorization, and never panics.
+/// pass every check `transfer()` performs — pause state, asset lifecycle
+/// status, the compliance lifecycle status of both parties, the receiver's
+/// holding cap, and the sender's balance — evaluated against the current
+/// ledger state. Pure read — issues no storage writes, requires no
+/// authorization, and never panics.
 ///
 /// This is a point-in-time check only: balances, whitelist membership, the
 /// holding cap, and pause state can all change between this call and a
@@ -88,6 +98,12 @@ pub fn check_transfer_eligibility(env: &Env, from: &Address, to: &Address, amoun
     if is_paused(env) {
         return false;
     }
+    // Mirrors `asset.rs::transfer`, which rejects any transfer while the
+    // asset itself is not Active.
+    if get_asset_status_internal(env) != AssetStatus::Active {
+        return false;
+    }
+    // Both parties must be `Approved` under the compliance lifecycle.
     if !is_whitelisted(env, from) {
         return false;
     }

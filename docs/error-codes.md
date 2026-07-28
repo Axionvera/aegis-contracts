@@ -28,7 +28,7 @@ variants can be added to a category without renumbering any other category.
 | 1000–1999   | Configuration            | Contract setup / one-time configuration failures    |
 | 2000–2999   | Storage                  | Missing or inconsistent on-chain state              |
 | 3000–3999   | Admin & Authorization     | Role checks, admin transfer, pause/unpause           |
-| 4000–4999   | Compliance                | Whitelist checks on transfer/mint participants       |
+| 4000–4999   | Compliance                | Lifecycle status checks on transfer/mint participants, and lifecycle transition validation |
 | 5000–5999   | Minting & Transfers       | Amount and balance validation                        |
 | 6000–6999   | Asset Metadata            | Reserved for a future asset-metadata module          |
 
@@ -46,8 +46,14 @@ variants can be added to a category without renumbering any other category.
 | 3004 | `ContractPaused`         | Admin/Auth     | The operation is blocked because the contract is paused.             |
 | 3005 | `AlreadyPaused`          | Admin/Auth     | `pause` was called while already paused.                             |
 | 3006 | `NotPaused`              | Admin/Auth     | `unpause` was called while not paused.                                |
-| 4000 | `SenderNotWhitelisted`   | Compliance     | The sending address is not on the compliance whitelist.              |
-| 4001 | `ReceiverNotWhitelisted` | Compliance     | The receiving address is not on the compliance whitelist.            |
+| 4000 | `SenderNotWhitelisted`   | Compliance     | The sending address has no current clearance (`Unknown` or `Revoked`). |
+| 4001 | `ReceiverNotWhitelisted` | Compliance     | The receiving address has no current clearance (`Unknown` or `Revoked`). |
+| 4002 | `SenderBlocked`          | Compliance     | The sending address is `Blocked` — sanctioned or frozen.             |
+| 4003 | `ReceiverBlocked`        | Compliance     | The receiving address is `Blocked` — sanctioned or frozen.           |
+| 4004 | `SenderCompliancePending`| Compliance     | The sending address is `Pending` — KYC submitted, not yet cleared.   |
+| 4005 | `ReceiverCompliancePending` | Compliance  | The receiving address is `Pending` — KYC submitted, not yet cleared. |
+| 4006 | `InvalidComplianceTransition` | Compliance | The requested compliance status transition is not permitted by the lifecycle state machine. |
+| 4007 | `ComplianceStatusUnchanged` | Compliance  | The requested status equals the address's current status — no transition to apply. |
 | 5000 | `InvalidAmount`          | Minting/Transfer | The requested amount was not strictly greater than zero.           |
 | 5001 | `InsufficientBalance`    | Minting/Transfer | The sender's balance cannot cover the requested transfer amount.   |
 
@@ -69,6 +75,15 @@ variants can be added to a category without renumbering any other category.
    - `4000`/`4001` → "This address has not completed compliance
      verification." Prompt the user toward the whitelist/KYC flow rather
      than showing a raw error.
+   - `4002`/`4003` → "This address is restricted." **Never invite a retry
+     or a KYC re-submission** — a `Blocked` address is under an enforcement
+     freeze that only the admin can lift. Direct the user to support.
+   - `4004`/`4005` → "Compliance review is still in progress." No user
+     action is available; show the expected timeline rather than a retry.
+   - `4006` → An admin UI attempted an illegal lifecycle transition. Drive
+     the UI from `get_allowed_transitions_for` so this is unreachable.
+   - `4007` → The address is already in the requested state; treat as a
+     benign no-op rather than a failure.
    - `5000` → "Enter an amount greater than zero."
    - `5001` → "Insufficient balance for this transfer."
    - `1000`/`2000`/`2001` → these indicate integration or environment bugs

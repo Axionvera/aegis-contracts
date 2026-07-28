@@ -95,10 +95,16 @@ fn transition_is_valid(from: &AssetStatus, to: &AssetStatus) -> bool {
 
     match from {
         AssetStatus::Active => {
-            matches!(to, AssetStatus::Paused | AssetStatus::Retired | AssetStatus::Blocked)
+            matches!(
+                to,
+                AssetStatus::Paused | AssetStatus::Retired | AssetStatus::Blocked
+            )
         }
         AssetStatus::Paused => {
-            matches!(to, AssetStatus::Active | AssetStatus::Retired | AssetStatus::Blocked)
+            matches!(
+                to,
+                AssetStatus::Active | AssetStatus::Retired | AssetStatus::Blocked
+            )
         }
         AssetStatus::Retired => false,
         AssetStatus::Blocked => matches!(to, AssetStatus::Active | AssetStatus::Retired),
@@ -185,7 +191,9 @@ impl AegisContract {
 
         env.storage().instance().set(&DataKey::AssetName, &name);
         env.storage().instance().set(&DataKey::AssetSymbol, &symbol);
-        env.storage().instance().set(&DataKey::AssetMetadataUri, &uri);
+        env.storage()
+            .instance()
+            .set(&DataKey::AssetMetadataUri, &uri);
 
         env.events().publish(
             ("asset_metadata_updated",),
@@ -214,9 +222,11 @@ impl AegisContract {
             return Err(Error::AssetNotActive);
         }
 
-        if !compliance::is_whitelisted(&env, &to) {
-            return Err(Error::ReceiverNotWhitelisted);
-        }
+        // Consume the compliance lifecycle state: only an `Approved` receiver
+        // may be credited. `Blocked` and `Pending` return their own error
+        // codes so a client can distinguish a sanctions freeze from an
+        // in-flight KYC review. See `docs/compliance-lifecycle.md`.
+        compliance::require_can_receive(&env, &to)?;
 
         // Enforce the active supply cap before increasing total supply.
         // This is a compliance-sensitive control: it must run even for the
@@ -227,7 +237,6 @@ impl AegisContract {
         // This is a compliance-sensitive control that applies to every mint,
         // including those performed by the admin/AssetManager.
         holding::enforce_holding_cap(&env, &to, amount);
-
 
         let mut balance: i128 = env
             .storage()
@@ -272,12 +281,11 @@ impl AegisContract {
             return Err(Error::AssetNotActive);
         }
 
-        if !compliance::is_whitelisted(&env, &from) {
-            return Err(Error::SenderNotWhitelisted);
-        }
-        if !compliance::is_whitelisted(&env, &to) {
-            return Err(Error::ReceiverNotWhitelisted);
-        }
+        // Both parties must be `Approved` under the compliance lifecycle.
+        // Sender is checked first so a blocked/pending sender is reported
+        // even when the receiver is also ineligible.
+        compliance::require_can_send(&env, &from)?;
+        compliance::require_can_receive(&env, &to)?;
 
         // Enforce the per-investor holding cap before crediting the receiver.
         // Applies uniformly to transfers, so no investor can be credited

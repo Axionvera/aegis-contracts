@@ -79,6 +79,7 @@ Every target honours the variables in `.env` and accepts inline overrides, e.g.
 - [Admin Roles & Permissions](docs/admin-roles.md) — role-based access control (RBAC) design
 - [Admin Misuse Risks](docs/admin-misuse-risks.md) — threat model and mitigations
 - [Supply Cap Amendment Governance](docs/supply-cap-governance.md) — 2-step cap amendment workflow and enforcement
+- [Compliance Status Lifecycle](docs/compliance-lifecycle.md) — five-state investor lifecycle (`Unknown`/`Pending`/`Approved`/`Revoked`/`Blocked`), enforced transition matrix, authorization rules, and mint/transfer enforcement
 
 ## Errors
 

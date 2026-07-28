@@ -1,6 +1,3 @@
-// ... (existing content remains unchanged up to the final existing test) ...
-
-
 use super::*;
 use crate::asset::{AssetMintedEvent, AssetStatus, TransferEvent, YieldDistributedEvent};
 use crate::capabilities::{
@@ -8,8 +5,9 @@ use crate::capabilities::{
     MetadataCapabilities, MintingCapabilities, PauseCapabilities, TransferCapabilities,
     CAPABILITY_SCHEMA_VERSION,
 };
-use crate::compliance::{UserWhitelistedEvent, WhitelistRevokedEvent};
-use crate::eligibility::InvestorEligibility;
+use crate::compliance::{
+    ComplianceStatus, ComplianceStatusChangedEvent, UserWhitelistedEvent, WhitelistRevokedEvent,
+};
 use crate::errors::Error;
 use soroban_sdk::{
     testutils::{Address as _, Events as _},
@@ -816,10 +814,23 @@ fn test_whitelist_user_emits_event() {
     client.initialize(&admin);
     client.whitelist_user(&admin, &user1);
 
+    // The lifecycle transition event is emitted first, then the legacy
+    // `user_whitelisted` event is retained for backwards compatibility.
     assert_eq!(
         env.events().all(),
         vec![
             &env,
+            (
+                client.address.clone(),
+                ("compliance_status_changed",).into_val(&env),
+                ComplianceStatusChangedEvent {
+                    caller: admin.clone(),
+                    user: user1.clone(),
+                    previous_status: ComplianceStatus::Unknown,
+                    new_status: ComplianceStatus::Approved,
+                }
+                .into_val(&env),
+            ),
             (
                 client.address.clone(),
                 ("user_whitelisted",).into_val(&env),
@@ -846,6 +857,17 @@ fn test_revoke_whitelist_emits_event() {
         env.events().all(),
         vec![
             &env,
+            (
+                client.address.clone(),
+                ("compliance_status_changed",).into_val(&env),
+                ComplianceStatusChangedEvent {
+                    caller: admin.clone(),
+                    user: user1.clone(),
+                    previous_status: ComplianceStatus::Approved,
+                    new_status: ComplianceStatus::Revoked,
+                }
+                .into_val(&env),
+            ),
             (
                 client.address.clone(),
                 ("whitelist_revoked",).into_val(&env),
@@ -973,7 +995,7 @@ fn test_distribute_yield_emits_event() {
 
 #[test]
 fn test_supply_cap_default_is_unbounded() {
-    let (env, client, admin, user1, user2) = setup();
+    let (env, client, admin, _user1, user2) = setup();
     env.mock_all_auths();
 
     client.initialize(&admin);
@@ -1056,7 +1078,6 @@ fn test_supply_cap_noop_rejected() {
 // invalid-state inputs across compliance, role, asset, minting, transfer, and config.
 // Every failure MUST leave contract state unchanged.
 
-
 #[test]
 fn test_invalid_input_matrix_full_coverage() {
     let (env, client, admin, user1, user2) = setup();
@@ -1071,6 +1092,8 @@ fn test_invalid_input_matrix_full_coverage() {
     let initial_asset_status = client.get_asset_status();
 
     // ── 1. CONFIG / INITIALIZATION ──────────────────────────────────────────
+    client.initialize(&admin);
+
     // Double init (already covered but re-assert in matrix)
     let r = client.try_initialize(&admin);
     assert_eq!(r, Err(Ok(Error::AlreadyInitialized)));
@@ -1179,10 +1202,24 @@ fn test_invalid_input_matrix_full_coverage() {
     let r = client.try_set_asset_status(&admin, &AssetStatus::Active);
     assert_eq!(r, Err(Ok(Error::InvalidAssetStatusTransition)));
 
+    // Unpause when not paused (after unpause)
+    client.unpause(&admin);
+    let r = client.try_unpause(&admin);
+    assert_eq!(r, Err(Ok(Error::NotPaused)));
 
+    // A retired asset blocks every transfer regardless of compliance state.
     assert!(!client.check_transfer_eligibility(&user1, &user2, &100));
     let result = client.try_transfer(&user1, &user2, &100);
-    assert_eq!(result, Err(Ok(Error::ReceiverNotWhitelisted)));
+    assert_eq!(result, Err(Ok(Error::AssetNotActive)));
+
+    // ── FINAL STATE VERIFICATION: NO MUTATION ───────────────────────────────
+    assert_eq!(client.get_total_supply(), initial_total_supply + 500);
+    assert_eq!(client.get_balance_of(&user1), initial_balance_u1 + 500); // only the explicit mint succeeded
+    assert_eq!(client.get_balance_of(&user2), initial_balance_u2);
+    assert_eq!(client.get_role_of(&user1), Role::AssetManager); // role changes from setup are expected
+    assert!(client.is_whitelisted(&user1));
+    assert_eq!(client.get_asset_status(), AssetStatus::Retired);
+    let _ = (initial_role_u1, initial_whitelist_u1, initial_asset_status);
 }
 
 // ─── Contract capability flags (#82) ─────────────────────────────────────────
@@ -1211,6 +1248,8 @@ fn default_capabilities(env: &Env) -> ContractCapabilities {
             whitelist_revocation: CapabilityStatus::Supported,
             batch_whitelisting: CapabilityStatus::Planned,
             investor_tiers: CapabilityStatus::Unsupported,
+            lifecycle_states: CapabilityStatus::Supported,
+            lifecycle_transitions: CapabilityStatus::Supported,
             eligibility_reads: CapabilityStatus::Supported,
             enforced_on_mint: true,
             enforced_on_transfer: true,
@@ -1252,6 +1291,7 @@ fn default_capabilities(env: &Env) -> ContractCapabilities {
         events: EventCapabilities {
             module_enabled: true,
             compliance_events: CapabilityStatus::Supported,
+            compliance_lifecycle_events: CapabilityStatus::Supported,
             minting_events: CapabilityStatus::Supported,
             transfer_events: CapabilityStatus::Supported,
             admin_events: CapabilityStatus::Supported,
@@ -1577,7 +1617,7 @@ fn test_supports_capability_available_before_initialize_and_when_paused() {
         client.supports_capability(&Symbol::new(&env, "whitelist")),
         CapabilityStatus::Supported
     );
-    assert_eq!(client.get_capability_keys().len(), 27);
+    assert_eq!(client.get_capability_keys().len(), 30);
 
     env.mock_all_auths();
     client.initialize(&admin);
@@ -1588,7 +1628,7 @@ fn test_supports_capability_available_before_initialize_and_when_paused() {
         client.supports_capability(&Symbol::new(&env, "whitelist")),
         CapabilityStatus::Supported
     );
-    assert_eq!(client.get_capability_keys().len(), 27);
+    assert_eq!(client.get_capability_keys().len(), 30);
 }
 
 #[test]
@@ -1657,17 +1697,802 @@ fn test_supports_capability_agrees_with_descriptor_across_state_changes() {
     assert!(caps.transfers.holding_cap_enforced);
 }
 
-    // Unpause when not paused (after unpause)
-    client.unpause(&admin);
-    let r = client.try_unpause(&admin);
-    assert_eq!(r, Err(Ok(Error::NotPaused)));
+// ─── Compliance lifecycle state machine (#compliance-lifecycle) ──────────────
+//
+// These tests lock down the five-state investor compliance lifecycle: the
+// default state, every allowed transition, every rejected transition, the
+// authorization asymmetry around `Blocked`, the events emitted on change, and
+// the fact that minting and transfers actually consume the lifecycle state.
 
-    // ── FINAL STATE VERIFICATION: NO MUTATION ───────────────────────────────
-    assert_eq!(client.get_total_supply(), initial_total_supply);
-    assert_eq!(client.get_balance_of(&user1), initial_balance_u1 + 500); // only the explicit mint succeeded
-    assert_eq!(client.get_balance_of(&user2), initial_balance_u2);
-    assert_eq!(client.get_role_of(&user1), Role::AssetManager); // role changes from setup are expected
-    assert!(client.is_whitelisted(&user1));
-    assert_eq!(client.get_asset_status(), AssetStatus::Active); // reset in matrix
+/// Every lifecycle state, in ABI order.
+const ALL_STATUSES: [ComplianceStatus; 5] = [
+    ComplianceStatus::Unknown,
+    ComplianceStatus::Pending,
+    ComplianceStatus::Approved,
+    ComplianceStatus::Revoked,
+    ComplianceStatus::Blocked,
+];
+
+/// The authoritative transition matrix, duplicated here on purpose: the test
+/// must fail if `compliance.rs` ever silently widens or narrows it.
+fn expected_allowed(from: ComplianceStatus, to: ComplianceStatus) -> bool {
+    use ComplianceStatus::*;
+    matches!(
+        (from, to),
+        (Unknown, Pending)
+            | (Unknown, Approved)
+            | (Unknown, Blocked)
+            | (Pending, Approved)
+            | (Pending, Revoked)
+            | (Pending, Blocked)
+            | (Approved, Pending)
+            | (Approved, Revoked)
+            | (Approved, Blocked)
+            | (Revoked, Pending)
+            | (Revoked, Approved)
+            | (Revoked, Blocked)
+            | (Blocked, Pending)
+    )
 }
 
+#[test]
+fn test_compliance_status_defaults_to_unknown() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+
+    // Readable before initialize — a pure read with a fail-closed default.
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Unknown
+    );
+
+    client.initialize(&admin);
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Unknown
+    );
+    // The legacy boolean is derived from the lifecycle, so it agrees.
+    assert!(!client.is_whitelisted(&user1));
+}
+
+#[test]
+fn test_transition_matrix_matches_specification() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    for from in ALL_STATUSES.iter() {
+        for to in ALL_STATUSES.iter() {
+            assert_eq!(
+                client.is_compliance_transition_allowed(from, to),
+                expected_allowed(*from, *to),
+                "transition matrix drift"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_self_transitions_are_never_allowed() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    for status in ALL_STATUSES.iter() {
+        assert!(
+            !client.is_compliance_transition_allowed(status, status),
+            "a no-op must not be a valid transition"
+        );
+    }
+}
+
+#[test]
+fn test_unknown_is_never_a_transition_target() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    // Compliance history is never erased — offboarding is `Revoked`.
+    for from in ALL_STATUSES.iter() {
+        assert!(!client.is_compliance_transition_allowed(from, &ComplianceStatus::Unknown));
+    }
+}
+
+#[test]
+fn test_get_allowed_transitions_lists_exactly_the_legal_targets() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    for from in ALL_STATUSES.iter() {
+        let allowed = client.get_allowed_transitions(from);
+        for to in ALL_STATUSES.iter() {
+            assert_eq!(
+                allowed.contains(to),
+                expected_allowed(*from, *to),
+                "allowed-transition list disagrees with the matrix"
+            );
+        }
+    }
+
+    // Blocked is a quarantine with exactly one exit.
+    let from_blocked = client.get_allowed_transitions(&ComplianceStatus::Blocked);
+    assert_eq!(from_blocked.len(), 1);
+    assert_eq!(from_blocked.get(0).unwrap(), ComplianceStatus::Pending);
+}
+
+#[test]
+fn test_get_allowed_transitions_for_address_tracks_current_state() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    // Unknown → three options.
+    assert_eq!(client.get_allowed_transitions_for(&user1).len(), 3);
+
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Blocked);
+    let allowed = client.get_allowed_transitions_for(&user1);
+    assert_eq!(allowed.len(), 1);
+    assert_eq!(allowed.get(0).unwrap(), ComplianceStatus::Pending);
+}
+
+#[test]
+fn test_full_happy_path_lifecycle_walk() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    // Unknown → Pending → Approved → Revoked → Approved → Blocked → Pending
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Pending);
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Pending
+    );
+    assert!(!client.is_whitelisted(&user1));
+
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Approved);
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Approved
+    );
+    assert!(client.is_whitelisted(&user1));
+
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Revoked);
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Revoked
+    );
+    assert!(!client.is_whitelisted(&user1));
+
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Approved);
+    assert!(client.is_whitelisted(&user1));
+
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Blocked);
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Blocked
+    );
+    assert!(!client.is_whitelisted(&user1));
+
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Pending);
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Pending
+    );
+}
+
+#[test]
+fn test_invalid_transitions_are_rejected_and_leave_state_unchanged() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    // Blocked → Approved is the headline rejection: a sanctions freeze can
+    // only be lifted back into review, never straight to cleared.
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Blocked);
+    let r = client.try_set_compliance_status(&admin, &user1, &ComplianceStatus::Approved);
+    assert_eq!(r, Err(Ok(Error::InvalidComplianceTransition)));
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Blocked
+    );
+
+    // Blocked → Revoked is also rejected (would be a silent downgrade).
+    let r = client.try_set_compliance_status(&admin, &user1, &ComplianceStatus::Revoked);
+    assert_eq!(r, Err(Ok(Error::InvalidComplianceTransition)));
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Blocked
+    );
+
+    // Blocked → Unknown: history cannot be erased.
+    let r = client.try_set_compliance_status(&admin, &user1, &ComplianceStatus::Unknown);
+    assert_eq!(r, Err(Ok(Error::InvalidComplianceTransition)));
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Blocked
+    );
+}
+
+#[test]
+fn test_unknown_to_revoked_is_rejected() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    // Nothing has ever been granted, so there is nothing to revoke.
+    let r = client.try_set_compliance_status(&admin, &user1, &ComplianceStatus::Revoked);
+    assert_eq!(r, Err(Ok(Error::InvalidComplianceTransition)));
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Unknown
+    );
+}
+
+#[test]
+fn test_every_invalid_transition_is_rejected_exhaustively() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    for from in ALL_STATUSES.iter() {
+        for to in ALL_STATUSES.iter() {
+            if expected_allowed(*from, *to) {
+                continue;
+            }
+
+            // Fresh address per case so each starts from a clean record and
+            // is driven to `from` only through legal transitions.
+            let subject = Address::generate(&env);
+            if *from != ComplianceStatus::Unknown {
+                if *from == ComplianceStatus::Revoked {
+                    client.set_compliance_status(&admin, &subject, &ComplianceStatus::Approved);
+                }
+                client.set_compliance_status(&admin, &subject, from);
+            }
+            assert_eq!(client.get_compliance_status(&subject), *from);
+
+            let r = client.try_set_compliance_status(&admin, &subject, to);
+            let expected = if from == to {
+                Error::ComplianceStatusUnchanged
+            } else {
+                Error::InvalidComplianceTransition
+            };
+            assert_eq!(r, Err(Ok(expected)), "transition should have been rejected");
+            // Rejected transitions must never mutate state.
+            assert_eq!(client.get_compliance_status(&subject), *from);
+        }
+    }
+}
+
+#[test]
+fn test_no_op_transition_reports_unchanged() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Approved);
+    let r = client.try_set_compliance_status(&admin, &user1, &ComplianceStatus::Approved);
+    assert_eq!(r, Err(Ok(Error::ComplianceStatusUnchanged)));
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Approved
+    );
+}
+
+// ─── Lifecycle authorization ─────────────────────────────────────────────────
+
+#[test]
+fn test_compliance_officer_can_drive_the_lifecycle() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::ComplianceOfficer);
+
+    client.set_compliance_status(&user1, &user2, &ComplianceStatus::Pending);
+    client.set_compliance_status(&user1, &user2, &ComplianceStatus::Approved);
+    assert_eq!(
+        client.get_compliance_status(&user2),
+        ComplianceStatus::Approved
+    );
+
+    // A compliance officer may also impose a freeze...
+    client.set_compliance_status(&user1, &user2, &ComplianceStatus::Blocked);
+    assert_eq!(
+        client.get_compliance_status(&user2),
+        ComplianceStatus::Blocked
+    );
+}
+
+#[test]
+fn test_emergency_officer_can_drive_the_lifecycle() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::EmergencyOfficer);
+
+    client.set_compliance_status(&user1, &user2, &ComplianceStatus::Blocked);
+    assert_eq!(
+        client.get_compliance_status(&user2),
+        ComplianceStatus::Blocked
+    );
+}
+
+#[test]
+fn test_only_admin_can_unblock() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::ComplianceOfficer);
+
+    client.set_compliance_status(&user1, &user2, &ComplianceStatus::Blocked);
+
+    // ...but must not be able to lift one. Mirrors the pause/unpause
+    // asymmetry: a compromised officer cannot release a sanctioned address.
+    let r = client.try_set_compliance_status(&user1, &user2, &ComplianceStatus::Pending);
+    assert_eq!(r, Err(Ok(Error::Unauthorized)));
+    assert_eq!(
+        client.get_compliance_status(&user2),
+        ComplianceStatus::Blocked
+    );
+
+    // The supreme admin can.
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Pending);
+    assert_eq!(
+        client.get_compliance_status(&user2),
+        ComplianceStatus::Pending
+    );
+}
+
+#[test]
+fn test_emergency_officer_cannot_unblock() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::EmergencyOfficer);
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Blocked);
+
+    let r = client.try_set_compliance_status(&user1, &user2, &ComplianceStatus::Pending);
+    assert_eq!(r, Err(Ok(Error::Unauthorized)));
+}
+
+#[test]
+fn test_unauthorized_caller_cannot_change_compliance_status() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+
+    // AssetManager is not a compliance role.
+    let r = client.try_set_compliance_status(&user1, &user2, &ComplianceStatus::Approved);
+    assert_eq!(r, Err(Ok(Error::Unauthorized)));
+
+    // No role at all.
+    let stranger = Address::generate(&env);
+    let r = client.try_set_compliance_status(&stranger, &user2, &ComplianceStatus::Approved);
+    assert_eq!(r, Err(Ok(Error::Unauthorized)));
+
+    assert_eq!(
+        client.get_compliance_status(&user2),
+        ComplianceStatus::Unknown
+    );
+}
+
+#[test]
+fn test_set_compliance_status_blocked_when_paused() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.pause(&admin);
+
+    let r = client.try_set_compliance_status(&admin, &user1, &ComplianceStatus::Approved);
+    assert_eq!(r, Err(Ok(Error::ContractPaused)));
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Unknown
+    );
+}
+
+// ─── Lifecycle enforcement on minting and transfers ──────────────────────────
+
+#[test]
+fn test_mint_rejects_each_non_approved_status_with_its_own_code() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+
+    // Unknown
+    let unknown = Address::generate(&env);
+    let r = client.try_mint_asset(&user1, &unknown, &100);
+    assert_eq!(r, Err(Ok(Error::ReceiverNotWhitelisted)));
+
+    // Pending — KYC in flight must fail closed.
+    let pending = Address::generate(&env);
+    client.set_compliance_status(&admin, &pending, &ComplianceStatus::Pending);
+    let r = client.try_mint_asset(&user1, &pending, &100);
+    assert_eq!(r, Err(Ok(Error::ReceiverCompliancePending)));
+
+    // Revoked
+    let revoked = Address::generate(&env);
+    client.set_compliance_status(&admin, &revoked, &ComplianceStatus::Approved);
+    client.set_compliance_status(&admin, &revoked, &ComplianceStatus::Revoked);
+    let r = client.try_mint_asset(&user1, &revoked, &100);
+    assert_eq!(r, Err(Ok(Error::ReceiverNotWhitelisted)));
+
+    // Blocked — a distinct code so a client never invites a re-submission.
+    let blocked = Address::generate(&env);
+    client.set_compliance_status(&admin, &blocked, &ComplianceStatus::Blocked);
+    let r = client.try_mint_asset(&user1, &blocked, &100);
+    assert_eq!(r, Err(Ok(Error::ReceiverBlocked)));
+
+    // Approved is the only state that mints.
+    let approved = Address::generate(&env);
+    client.set_compliance_status(&admin, &approved, &ComplianceStatus::Approved);
+    client.mint_asset(&user1, &approved, &100);
+    assert_eq!(client.get_balance_of(&approved), 100);
+    assert_eq!(client.get_total_supply(), 100);
+}
+
+#[test]
+fn test_transfer_rejects_each_non_approved_sender_status() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Approved);
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
+    client.mint_asset(&user1, &user1, &1000);
+
+    // Approved → Pending: the holder keeps their balance but is frozen out.
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Pending);
+    let r = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::SenderCompliancePending)));
+    assert_eq!(client.get_balance_of(&user1), 1000);
+
+    // Pending → Revoked
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Revoked);
+    let r = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::SenderNotWhitelisted)));
+
+    // Revoked → Blocked
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Blocked);
+    let r = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::SenderBlocked)));
+
+    // Balance survived every rejected attempt.
+    assert_eq!(client.get_balance_of(&user1), 1000);
+    assert_eq!(client.get_balance_of(&user2), 0);
+}
+
+#[test]
+fn test_transfer_rejects_each_non_approved_receiver_status() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Approved);
+    client.mint_asset(&user1, &user1, &1000);
+
+    // Unknown receiver
+    let r = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::ReceiverNotWhitelisted)));
+
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Pending);
+    let r = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::ReceiverCompliancePending)));
+
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Blocked);
+    let r = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::ReceiverBlocked)));
+
+    // Unblock through review, then clear: the transfer now succeeds.
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Pending);
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
+    client.transfer(&user1, &user2, &100);
+    assert_eq!(client.get_balance_of(&user2), 100);
+}
+
+#[test]
+fn test_sender_status_is_reported_before_receiver_status() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Blocked);
+    // user2 is Unknown — both parties are ineligible.
+
+    let r = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::SenderBlocked)));
+}
+
+#[test]
+fn test_blocking_a_holder_freezes_their_balance_without_destroying_it() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Approved);
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
+    client.mint_asset(&user1, &user1, &500);
+
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Blocked);
+
+    assert_eq!(client.get_balance_of(&user1), 500);
+    assert!(client.try_transfer(&user1, &user2, &1).is_err());
+    // ...and nobody can top them up either.
+    assert!(client.try_mint_asset(&user1, &user1, &1).is_err());
+    assert_eq!(client.get_balance_of(&user1), 500);
+    assert_eq!(client.get_total_supply(), 500);
+}
+
+// ─── Lifecycle events ────────────────────────────────────────────────────────
+
+#[test]
+fn test_set_compliance_status_emits_lifecycle_event() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Pending);
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Approved);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("compliance_status_changed",).into_val(&env),
+                ComplianceStatusChangedEvent {
+                    caller: admin,
+                    user: user1,
+                    previous_status: ComplianceStatus::Pending,
+                    new_status: ComplianceStatus::Approved,
+                }
+                .into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_rejected_transition_emits_no_event() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Blocked);
+
+    let r = client.try_set_compliance_status(&admin, &user1, &ComplianceStatus::Approved);
+    assert_eq!(r, Err(Ok(Error::InvalidComplianceTransition)));
+    // Soroban discards events from a reverted invocation.
+    assert_eq!(env.events().all().events().len(), 0);
+}
+
+#[test]
+fn test_idempotent_whitelist_emits_no_duplicate_lifecycle_event() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    client.whitelist_user(&admin, &user1);
+    // Second call is a no-op transition: only the legacy event is emitted.
+    client.whitelist_user(&admin, &user1);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("user_whitelisted",).into_val(&env),
+                UserWhitelistedEvent {
+                    caller: admin,
+                    user: user1,
+                }
+                .into_val(&env),
+            ),
+        ]
+    );
+}
+
+// ─── Legacy whitelist wrappers vs. the lifecycle ─────────────────────────────
+
+#[test]
+fn test_legacy_whitelist_wrappers_drive_the_lifecycle() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    client.whitelist_user(&admin, &user1);
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Approved
+    );
+    assert!(client.is_whitelisted(&user1));
+
+    client.revoke_whitelist(&admin, &user1);
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Revoked
+    );
+    assert!(!client.is_whitelisted(&user1));
+
+    // Re-approval through the legacy path works from `Revoked`.
+    client.whitelist_user(&admin, &user1);
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Approved
+    );
+}
+
+#[test]
+fn test_legacy_whitelist_cannot_lift_a_block() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Blocked);
+
+    let r = client.try_whitelist_user(&admin, &user1);
+    assert_eq!(r, Err(Ok(Error::InvalidComplianceTransition)));
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Blocked
+    );
+    assert!(!client.is_whitelisted(&user1));
+}
+
+#[test]
+fn test_legacy_revoke_does_not_downgrade_a_block() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Blocked);
+
+    // Tolerated as a no-op on the lifecycle — the stronger state survives.
+    client.revoke_whitelist(&admin, &user1);
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Blocked
+    );
+}
+
+#[test]
+fn test_legacy_revoke_of_unknown_address_is_a_tolerated_no_op() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    client.revoke_whitelist(&admin, &user1);
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Unknown
+    );
+}
+
+// ─── Lifecycle in the eligibility read helpers ───────────────────────────────
+
+#[test]
+fn test_eligibility_snapshot_exposes_lifecycle_status() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+
+    let e = client.get_investor_eligibility(&user2);
+    assert_eq!(e.compliance_status, ComplianceStatus::Unknown);
+    assert!(!e.whitelisted);
+    assert!(!e.can_receive);
+    assert!(!e.can_send);
+
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Pending);
+    let e = client.get_investor_eligibility(&user2);
+    assert_eq!(e.compliance_status, ComplianceStatus::Pending);
+    assert!(!e.whitelisted);
+    assert!(!e.can_receive);
+
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
+    client.mint_asset(&user1, &user2, &250);
+    let e = client.get_investor_eligibility(&user2);
+    assert_eq!(e.compliance_status, ComplianceStatus::Approved);
+    assert!(e.whitelisted);
+    assert!(e.can_receive);
+    assert!(e.can_send);
+    assert_eq!(e.balance, 250);
+
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Blocked);
+    let e = client.get_investor_eligibility(&user2);
+    assert_eq!(e.compliance_status, ComplianceStatus::Blocked);
+    assert!(!e.can_receive);
+    assert!(!e.can_send);
+    // Balance is frozen, not erased.
+    assert_eq!(e.balance, 250);
+}
+
+#[test]
+fn test_check_transfer_eligibility_tracks_lifecycle_changes() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Approved);
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
+    client.mint_asset(&user1, &user1, &1000);
+
+    assert!(client.check_transfer_eligibility(&user1, &user2, &100));
+
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Pending);
+    assert!(!client.check_transfer_eligibility(&user1, &user2, &100));
+
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Blocked);
+    assert!(!client.check_transfer_eligibility(&user1, &user2, &100));
+}
+
+// ─── Lifecycle capability advertisement ──────────────────────────────────────
+
+#[test]
+fn test_capabilities_advertise_the_compliance_lifecycle() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    let caps = client.get_capabilities();
+    assert_eq!(
+        caps.compliance.lifecycle_states,
+        CapabilityStatus::Supported
+    );
+    assert_eq!(
+        caps.compliance.lifecycle_transitions,
+        CapabilityStatus::Supported
+    );
+    assert_eq!(
+        caps.events.compliance_lifecycle_events,
+        CapabilityStatus::Supported
+    );
+
+    assert_eq!(
+        client.supports_capability(&Symbol::new(&env, "compliance_lifecycle")),
+        CapabilityStatus::Supported
+    );
+    assert_eq!(
+        client.supports_capability(&Symbol::new(&env, "compliance_transitions")),
+        CapabilityStatus::Supported
+    );
+    assert_eq!(
+        client.supports_capability(&Symbol::new(&env, "compliance_lifecycle_events")),
+        CapabilityStatus::Supported
+    );
+
+    // The new keys are advertised in the registry.
+    let keys = client.get_capability_keys();
+    assert!(keys.contains(Symbol::new(&env, "compliance_lifecycle")));
+    assert!(keys.contains(Symbol::new(&env, "compliance_transitions")));
+    assert!(keys.contains(Symbol::new(&env, "compliance_lifecycle_events")));
+}
+
+#[test]
+fn test_lifecycle_reads_never_revert_and_never_mutate() {
+    let (env, client, _admin, user1, _user2) = setup();
+
+    // Before initialize, with no auth mocked, none of these may panic.
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Unknown
+    );
+    assert!(client
+        .is_compliance_transition_allowed(&ComplianceStatus::Unknown, &ComplianceStatus::Approved));
+    assert_eq!(client.get_allowed_transitions_for(&user1).len(), 3);
+    assert_eq!(
+        client
+            .get_allowed_transitions(&ComplianceStatus::Blocked)
+            .len(),
+        1
+    );
+
+    // Pure reads publish nothing.
+    assert_eq!(env.events().all().events().len(), 0);
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Unknown
+    );
+}
