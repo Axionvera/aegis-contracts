@@ -99,5 +99,9 @@ Every target honours the variables in `.env` and accepts inline overrides, e.g.
 - [Local Deployment Guide](docs/local-deployment.md) — deployment assumptions, environment variables, Makefile reference, Soroban CLI usage, and common errors
 - [Contributor Experience Review](docs/contributor-experience-review.md) — known onboarding friction and follow-up items
 
+## CI & Contributing
+
+- [Failing CI Response Guide](docs/failing-ci-guide.md) — how to reproduce and fix Rust, Soroban, Makefile, dependency, and workflow failures (failing checks can block approval)
+
 ## Contributing
 Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to submit pull requests, branch naming conventions, and testing requirements.
