@@ -1,24 +1,25 @@
 use soroban_sdk::{contractimpl, Address, Env};
 
-use crate::admin::{get_admin, require_not_paused, require_role};
+use crate::admin::{require_not_paused, require_role};
 use crate::compliance;
-use crate::{AegisContract, DataKey, Role};
+use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error, Role};
 
 #[contractimpl]
 impl AegisContract {
     /// Mints new RWA tokens to a whitelisted address.
     /// Requires the AssetManager role or Admin.
     /// Blocked when the contract is paused.
-    pub fn mint_asset(env: Env, admin: Address, to: Address, amount: i128) {
+    pub fn mint_asset(env: Env, admin: Address, to: Address, amount: i128) -> Result<(), Error> {
         require_not_paused(&env);
         admin.require_auth();
         require_role(&env, &admin, Role::AssetManager);
-        assert!(amount > 0, "Amount must be positive");
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
 
-        assert!(
-            compliance::is_whitelisted(&env, &to),
-            "Receiver is not whitelisted"
-        );
+        if !compliance::is_whitelisted(&env, &to) {
+            return Err(Error::ReceiverNotWhitelisted);
+        }
 
         let mut balance: i128 = env
             .storage()
@@ -37,30 +38,34 @@ impl AegisContract {
             .unwrap_or(0);
         supply += amount;
         env.storage().instance().set(&DataKey::TotalSupply, &supply);
+
+        Ok(())
     }
 
     /// Transfers tokens between two whitelisted addresses.
     /// Blocked when the contract is paused.
-    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) -> Result<(), Error> {
         require_not_paused(&env);
         from.require_auth();
-        assert!(amount > 0, "Amount must be positive");
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
 
-        assert!(
-            compliance::is_whitelisted(&env, &from),
-            "Sender is not whitelisted"
-        );
-        assert!(
-            compliance::is_whitelisted(&env, &to),
-            "Receiver is not whitelisted"
-        );
+        if !compliance::is_whitelisted(&env, &from) {
+            return Err(Error::SenderNotWhitelisted);
+        }
+        if !compliance::is_whitelisted(&env, &to) {
+            return Err(Error::ReceiverNotWhitelisted);
+        }
 
         let mut from_balance: i128 = env
             .storage()
             .persistent()
             .get(&DataKey::Balance(from.clone()))
             .unwrap_or(0);
-        assert!(from_balance >= amount, "Insufficient balance");
+        if from_balance < amount {
+            return Err(Error::InsufficientBalance);
+        }
 
         // TODO: Implement fee deduction on transfer
         from_balance -= amount;
@@ -77,20 +82,26 @@ impl AegisContract {
         env.storage()
             .persistent()
             .set(&DataKey::Balance(to), &to_balance);
+
+        Ok(())
     }
 
     /// Mocks the distribution of yield to current token holders.
     /// Requires the AssetManager role or Admin.
     /// Blocked when the contract is paused.
-    pub fn distribute_yield(env: Env, admin: Address, amount: i128) {
+    pub fn distribute_yield(env: Env, admin: Address, amount: i128) -> Result<(), Error> {
         require_not_paused(&env);
         admin.require_auth();
         require_role(&env, &admin, Role::AssetManager);
-        assert!(amount > 0, "Amount must be positive");
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
 
         // Mock implementation. Real-world Soroban implementation requires
         // snapshotting balances or utilizing a claim-based dividend pull pattern
         // rather than iterating over maps to avoid gas limits.
         // TODO: Implement scalable yield snapshot mechanism
+
+        Ok(())
     }
 }

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::*;
+use crate::errors::Error;
 use soroban_sdk::{testutils::Address as _, Address, Env};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -49,7 +50,7 @@ fn test_mint_reverts_without_asset_manager_role() {
 
     // user1 has no role at all — mint should revert
     let result = client.try_mint_asset(&user1, &user2, &100);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
 }
 
 #[test]
@@ -63,7 +64,7 @@ fn test_mint_reverts_with_compliance_officer_role() {
 
     // ComplianceOfficer cannot mint — only AssetManager or Admin
     let result = client.try_mint_asset(&user1, &user2, &100);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
 }
 
 #[test]
@@ -80,8 +81,34 @@ fn test_mint_succeeds_with_asset_manager_role() {
 }
 
 #[test]
-fn test_mint_succeeds_with_admin_role() {
+fn test_mint_reverts_with_invalid_amount() {
     let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user2);
+
+    let result = client.try_mint_asset(&user1, &user2, &0);
+    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+}
+
+#[test]
+fn test_mint_reverts_when_receiver_not_whitelisted() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+
+    // user2 was never whitelisted
+    let result = client.try_mint_asset(&user1, &user2, &100);
+    assert_eq!(result, Err(Ok(Error::ReceiverNotWhitelisted)));
+}
+
+#[test]
+fn test_mint_succeeds_with_admin_role() {
+    let (env, client, admin, _user1, user2) = setup();
     env.mock_all_auths();
 
     client.initialize(&admin);
@@ -90,6 +117,63 @@ fn test_mint_succeeds_with_admin_role() {
     // Admin can mint without an explicit AssetManager role assignment
     let result = client.try_mint_asset(&admin, &user2, &100);
     assert!(result.is_ok());
+}
+
+// ─── Transfer validation ──────────────────────────────────────────────────────
+
+#[test]
+fn test_transfer_reverts_with_invalid_amount() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+
+    let result = client.try_transfer(&user1, &user2, &0);
+    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
+}
+
+#[test]
+fn test_transfer_reverts_when_sender_not_whitelisted() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user2);
+
+    // user1 was never whitelisted
+    let result = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(result, Err(Ok(Error::SenderNotWhitelisted)));
+}
+
+#[test]
+fn test_transfer_reverts_when_receiver_not_whitelisted() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user1);
+
+    // user2 was never whitelisted
+    let result = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(result, Err(Ok(Error::ReceiverNotWhitelisted)));
+}
+
+#[test]
+fn test_transfer_reverts_with_insufficient_balance() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&user1, &user1, &50);
+
+    // user1 only has a balance of 50
+    let result = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(result, Err(Ok(Error::InsufficientBalance)));
 }
 
 // ─── Wrong-caller: distribute_yield ───────────────────────────────────────────
@@ -102,7 +186,7 @@ fn test_distribute_yield_reverts_without_role() {
     client.initialize(&admin);
 
     let result = client.try_distribute_yield(&user1, &100);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
 }
 
 #[test]
@@ -114,7 +198,19 @@ fn test_distribute_yield_reverts_with_compliance_officer_role() {
     client.set_role(&admin, &user1, &Role::ComplianceOfficer);
 
     let result = client.try_distribute_yield(&user1, &100);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+}
+
+#[test]
+fn test_distribute_yield_reverts_with_invalid_amount() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+
+    let result = client.try_distribute_yield(&user1, &0);
+    assert_eq!(result, Err(Ok(Error::InvalidAmount)));
 }
 
 #[test]
@@ -140,7 +236,7 @@ fn test_whitelist_reverts_without_role() {
 
     // user2 has no role — whitelist should revert
     let result = client.try_whitelist_user(&user2, &user1);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
 }
 
 #[test]
@@ -153,7 +249,7 @@ fn test_whitelist_reverts_with_asset_manager_role() {
 
     // AssetManager cannot whitelist — only ComplianceOfficer or Admin
     let result = client.try_whitelist_user(&user2, &user1);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
 }
 
 #[test]
@@ -203,7 +299,7 @@ fn test_revoke_whitelist_reverts_without_role() {
 
     // user2 has no role
     let result = client.try_revoke_whitelist(&user2, &user1);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
 }
 
 #[test]
@@ -230,7 +326,7 @@ fn test_set_role_reverts_for_non_admin() {
 
     // user1 is not admin — cannot assign roles
     let result = client.try_set_role(&user1, &user2, &Role::AssetManager);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
 }
 
 #[test]
@@ -243,7 +339,7 @@ fn test_remove_role_reverts_for_non_admin() {
 
     // user1 is not admin — cannot revoke roles
     let result = client.try_remove_role(&user1, &user2);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
 }
 
 #[test]
@@ -255,7 +351,7 @@ fn test_remove_role_reverts_when_target_has_no_role() {
 
     // user2 has no role — revoking should revert
     let result = client.try_remove_role(&admin, &user2);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::NoRoleToRevoke)));
 }
 
 #[test]
@@ -267,7 +363,7 @@ fn test_cannot_assign_admin_role_via_set_role() {
 
     // Trying to assign Admin role via set_role should revert
     let result = client.try_set_role(&admin, &user2, &Role::Admin);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::CannotAssignAdminRole)));
 }
 
 #[test]
@@ -304,7 +400,7 @@ fn test_transfer_admin_reverts_for_non_admin() {
     client.initialize(&admin);
 
     let result = client.try_transfer_admin(&user1, &user2);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
 }
 
 #[test]
@@ -317,7 +413,7 @@ fn test_accept_admin_reverts_for_wrong_candidate() {
 
     // user2 tries to accept — should revert
     let result = client.try_accept_admin(&user2);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::NotPendingCandidate)));
 }
 
 #[test]
@@ -329,7 +425,7 @@ fn test_accept_admin_reverts_without_pending_transfer() {
 
     // No transfer initiated — accept should revert
     let result = client.try_accept_admin(&user2);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::NoPendingAdminTransfer)));
 }
 
 #[test]
@@ -360,7 +456,7 @@ fn test_renounce_admin_reverts_for_non_admin() {
     client.initialize(&admin);
 
     let result = client.try_renounce_admin(&user1);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
 }
 
 #[test]
@@ -385,7 +481,19 @@ fn test_double_initialization_reverts() {
     client.initialize(&admin);
 
     let result = client.try_initialize(&user1);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::AlreadyInitialized)));
+}
+
+// ─── Storage: uninitialized contract ──────────────────────────────────────────
+
+#[test]
+fn test_set_role_reverts_when_not_initialized() {
+    let (env, client, _admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    // No `initialize` call — the Admin key is missing from storage entirely.
+    let result = client.try_set_role(&user1, &user2, &Role::AssetManager);
+    assert_eq!(result, Err(Ok(Error::NotInitialized)));
 }
 
 // ─── Pause: authorization ─────────────────────────────────────────────────────
@@ -399,7 +507,7 @@ fn test_pause_reverts_for_unauthorized() {
 
     // user1 has no role — cannot pause
     let result = client.try_pause(&user1);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
 }
 
 #[test]
@@ -436,7 +544,7 @@ fn test_pause_reverts_when_already_paused() {
 
     // Second pause should revert
     let result = client.try_pause(&admin);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::AlreadyPaused)));
 }
 
 #[test]
@@ -449,7 +557,7 @@ fn test_unpause_reverts_for_non_admin() {
 
     // user1 is not admin — cannot unpause
     let result = client.try_unpause(&user1);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
 }
 
 #[test]
@@ -463,7 +571,7 @@ fn test_unpause_reverts_for_emergency_officer() {
 
     // EmergencyOfficer can pause but cannot unpause
     let result = client.try_unpause(&user1);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
 }
 
 #[test]
@@ -489,7 +597,7 @@ fn test_unpause_reverts_when_not_paused() {
 
     // Contract is not paused — unpause should revert
     let result = client.try_unpause(&admin);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::NotPaused)));
 }
 
 // ─── Pause: blocked state-changing operations ─────────────────────────────────
@@ -511,7 +619,7 @@ fn test_mint_blocked_when_paused() {
 
     // Mint should fail when paused
     let result = client.try_mint_asset(&user1, &user2, &100);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::ContractPaused)));
 }
 
 #[test]
@@ -534,7 +642,7 @@ fn test_transfer_blocked_when_paused() {
 
     // Transfer should fail when paused
     let result = client.try_transfer(&user1, &user2, &250);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::ContractPaused)));
 }
 
 #[test]
@@ -549,7 +657,7 @@ fn test_whitelist_blocked_when_paused() {
 
     // Whitelist should fail when paused
     let result = client.try_whitelist_user(&user1, &user2);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::ContractPaused)));
 }
 
 #[test]
@@ -565,7 +673,7 @@ fn test_revoke_whitelist_blocked_when_paused() {
 
     // Revoke whitelist should fail when paused
     let result = client.try_revoke_whitelist(&user1, &user2);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::ContractPaused)));
 }
 
 #[test]
@@ -580,12 +688,12 @@ fn test_distribute_yield_blocked_when_paused() {
 
     // Distribute yield should fail when paused
     let result = client.try_distribute_yield(&user1, &100);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::ContractPaused)));
 }
 
 #[test]
 fn test_set_role_blocked_when_paused() {
-    let (env, client, admin, user1, user2) = setup();
+    let (env, client, admin, user1, _user2) = setup();
     env.mock_all_auths();
 
     client.initialize(&admin);
@@ -594,12 +702,12 @@ fn test_set_role_blocked_when_paused() {
 
     // set_role is an admin operation — also blocked during pause
     let result = client.try_set_role(&admin, &user1, &Role::AssetManager);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::ContractPaused)));
 }
 
 #[test]
 fn test_remove_role_blocked_when_paused() {
-    let (env, client, admin, user1, user2) = setup();
+    let (env, client, admin, _user1, user2) = setup();
     env.mock_all_auths();
 
     client.initialize(&admin);
@@ -609,7 +717,7 @@ fn test_remove_role_blocked_when_paused() {
 
     // remove_role is also blocked during pause
     let result = client.try_remove_role(&admin, &user2);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::ContractPaused)));
 }
 
 // ─── Pause: read functions remain available ───────────────────────────────────
@@ -663,11 +771,11 @@ fn test_pause_unpause_full_lifecycle() {
     assert!(client.is_paused());
 
     let result = client.try_mint_asset(&user2, &user1, &500);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::ContractPaused)));
     let result = client.try_transfer(&user1, &user2, &100);
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::ContractPaused)));
     let result = client.try_whitelist_user(&user1, &Address::generate(&env));
-    assert!(result.is_err());
+    assert_eq!(result, Err(Ok(Error::ContractPaused)));
 
     // Unpause restores operations
     client.unpause(&admin);

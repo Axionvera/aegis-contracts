@@ -3,10 +3,13 @@
 pub mod admin;
 pub mod asset;
 pub mod compliance;
+pub mod errors;
 #[cfg(test)]
 mod test;
 
 use soroban_sdk::{contract, contractimpl, contracttype, Address, Env};
+
+pub use errors::Error;
 
 /// Role-based access control levels.
 /// Admin is the supreme authority; other roles grant scoped privileges.
@@ -15,6 +18,9 @@ use soroban_sdk::{contract, contractimpl, contracttype, Address, Env};
 pub enum Role {
     /// No role assigned.
     None,
+    /// Supreme authority. Set once at initialization; transferred only via
+    /// the 2-step `transfer_admin` / `accept_admin` flow.
+    Admin,
     /// Can manage the compliance whitelist.
     ComplianceOfficer,
     /// Can mint assets and distribute yield.
@@ -50,17 +56,17 @@ pub struct AegisContract;
 impl AegisContract {
     /// Initializes the contract with an admin. Can only be called once.
     /// The initial admin is assigned the Admin role implicitly.
-    pub fn initialize(env: Env, admin: Address) {
-        assert!(
-            !env.storage().instance().has(&DataKey::Admin),
-            "Contract already initialized"
-        );
+    pub fn initialize(env: Env, admin: Address) -> Result<(), Error> {
+        if env.storage().instance().has(&DataKey::Admin) {
+            return Err(Error::AlreadyInitialized);
+        }
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
         // Grant the Admin role to the initial admin.
         env.storage()
             .persistent()
             .set(&DataKey::Role(admin), &Role::Admin);
+        Ok(())
     }
 
     /// Returns the token balance for an address.
