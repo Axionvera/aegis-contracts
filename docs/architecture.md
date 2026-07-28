@@ -5,6 +5,8 @@ The Aegis smart contract logic is cleanly modularized to separate state constrai
 * **`admin.rs`:** Handles role-based access control (RBAC), admin transfer, role management, and the emergency pause mechanism. Provides the `require_role` and `require_not_paused` helpers used by all privileged operations.
 * **`compliance.rs`:** Handles all Access Control Lists (ACL). Whitelist registries are managed here. Privileged operations require the ComplianceOfficer role.
 * **`asset.rs`:** Handles mathematical balances and total supply management. It strictly queries the compliance module before executing state changes. Privileged operations require the AssetManager role.
+* **`eligibility.rs`:** Read-only composition of the compliance, holding-cap, and pause state into per-investor eligibility answers. Introduces no storage of its own.
+* **`capabilities.rs`:** Read-only capability descriptor advertising which modules are enabled and which protocol behaviours are supported, for SDK/dashboard feature gating. Introduces no storage of its own and reads through each module's own helper, so it cannot drift from the behaviour it describes. See [Contract Capability Flags](capabilities.md).
 
 ## Role-Based Access Control
 
@@ -26,7 +28,7 @@ A global pause mechanism blocks all state-changing operations when activated. Se
 * **Who can pause:** Admin or EmergencyOfficer
 * **Who can unpause:** Admin only
 * **What is blocked:** minting, transfers, compliance changes, role management
-* **What remains available:** read functions (`get_role_of`, `get_balance_of`, `get_total_supply`, `is_whitelisted`, `is_paused`)
+* **What remains available:** read functions (`get_role_of`, `get_balance_of`, `get_total_supply`, `is_whitelisted`, `is_paused`, `get_investor_eligibility`, `check_transfer_eligibility`, `get_capabilities`, `supports_capability`, `get_capability_keys`)
 
 ## Ledger State Storage
 Soroban utilizes three storage types. Aegis manages state as follows:

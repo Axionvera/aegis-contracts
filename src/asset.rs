@@ -1,9 +1,9 @@
-use soroban_sdk::{contractimpl, contracttype, Address, Env};
+use soroban_sdk::{contractimpl, contracttype, Address, Env, String};
 
 use crate::admin::{require_not_paused, require_role};
 use crate::compliance;
 use crate::holding;
-use crate::lifecycle::require_asset_operable;
+use crate::lifecycle::{get_asset_status, require_asset_operable, AssetStatus};
 use crate::supply_cap;
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error, Role};
 
@@ -45,8 +45,82 @@ pub struct YieldDistributedEvent {
     pub amount: i128,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AssetMetadata {
+    pub name: String,
+    pub symbol: String,
+    pub uri: String,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct AssetMetadataUpdatedEvent {
+    pub caller: Address,
+    pub name: String,
+    pub symbol: String,
+    pub uri: String,
+}
+
 #[contractimpl]
 impl AegisContract {
+    /// Returns the current metadata snapshot for the asset.
+    pub fn get_asset_metadata(env: Env) -> AssetMetadata {
+        AssetMetadata {
+            name: env
+                .storage()
+                .instance()
+                .get(&DataKey::AssetName)
+                .unwrap_or(String::from_str(&env, "")),
+            symbol: env
+                .storage()
+                .instance()
+                .get(&DataKey::AssetSymbol)
+                .unwrap_or(String::from_str(&env, "")),
+            uri: env
+                .storage()
+                .instance()
+                .get(&DataKey::AssetMetadataUri)
+                .unwrap_or(String::from_str(&env, "")),
+        }
+    }
+
+    /// Updates asset metadata.
+    /// Requires AssetManager role or Admin.
+    /// Blocked in Retired/Blocked states.
+    pub fn update_asset_metadata(
+        env: Env,
+        caller: Address,
+        name: String,
+        symbol: String,
+        uri: String,
+    ) -> Result<(), Error> {
+        require_not_paused(&env);
+        caller.require_auth();
+        require_role(&env, &caller, Role::AssetManager);
+
+        let status = get_asset_status(&env);
+        if matches!(status, AssetStatus::Retired | AssetStatus::Blocked) {
+            return Err(Error::AssetMetadataUpdateBlocked);
+        }
+
+        env.storage().instance().set(&DataKey::AssetName, &name);
+        env.storage().instance().set(&DataKey::AssetSymbol, &symbol);
+        env.storage().instance().set(&DataKey::AssetMetadataUri, &uri);
+
+        env.events().publish(
+            ("asset_metadata_updated",),
+            AssetMetadataUpdatedEvent {
+                caller,
+                name,
+                symbol,
+                uri,
+            },
+        );
+
+        Ok(())
+    }
+
     /// Mints new RWA tokens to a whitelisted address.
     /// Requires the AssetManager role or Admin.
     /// Blocked when the contract is paused.

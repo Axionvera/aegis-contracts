@@ -1,6 +1,10 @@
 .idea/
 /target/
 .env*
+# Keep the checked-in template (the `.env*` rule above would ignore it).
+!.env.example
 .DS_Store
 **/*.rs.bk
 /test_snapshots/
+# Contract id written by `make deploy` / scripts/deploy_local.sh
+.aegis-deploy

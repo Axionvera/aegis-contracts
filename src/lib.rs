@@ -1,6 +1,7 @@
 #![no_std]
 pub mod admin;
 pub mod asset;
+pub mod capabilities;
 pub mod compliance;
 pub mod eligibility;
 pub mod errors;
@@ -64,6 +65,12 @@ pub enum DataKey {
     /// The lifecycle status of this asset (Draft, Active, Paused, Retired,
     /// Blocked). Defaults to `Draft` when not set.
     AssetStatus,
+    /// Display name for the issued asset.
+    AssetName,
+    /// Ticker symbol for the issued asset.
+    AssetSymbol,
+    /// Optional metadata URI for off-chain asset details.
+    AssetMetadataUri,
 }
 
 #[contract]

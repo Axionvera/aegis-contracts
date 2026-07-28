@@ -51,8 +51,9 @@ pub enum Error {
     /// The sender's balance is insufficient to cover the requested amount.
     InsufficientBalance = 5001,
     // ─── 6000s: Asset Metadata ──────────────────────────────────────────────
-    // Reserved for future asset-metadata validation errors (name, symbol,
-    // decimals, schema checks). No active failure paths use this range yet.
+    /// Metadata update is blocked in the current lifecycle status
+    /// (asset is Retired or Blocked).
+    AssetMetadataUpdateBlocked = 6002,
 
     // ─── 7000s: Asset Lifecycle ─────────────────────────────────────────────
     /// The asset is in Draft status; minting and transfers are not permitted
