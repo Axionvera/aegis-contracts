@@ -1,0 +1,211 @@
+{
+  "$schema_version": 1,
+  "fixture": "02-minting",
+  "purpose": "Minting flows, running supply accounting, and supply/holding cap governance.",
+  "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+  "generator": "tests/sdk_fixtures.rs (cargo test --test sdk_fixtures)",
+  "notes": [
+    "Generated from live contract invocations in the Soroban test host; values are rendered from wire-level ScVal/XDR, never hand-written.",
+    "All addresses are synthetic, derived from SHA-256(\"aegis-fixture/<label>\"). They have no private keys and contain no real user data.",
+    "128-bit and 64-bit integers are encoded as decimal strings to stay lossless in JSON consumers that use IEEE-754 numbers."
+  ],
+  "scenarios": [
+    {
+      "id": "mint-first-issuance",
+      "description": "An AssetManager mints 1000 units to a whitelisted investor. This is the canonical issuance event; for a recipient's first mint it also marks their effective registration as a holder (see docs/events.md).",
+      "call": "mint_asset",
+      "args": [
+        "asset_manager",
+        "investor_alice",
+        "1000"
+      ],
+      "total_supply_before": "0",
+      "balance_before": "0",
+      "result": {
+        "ok": true
+      },
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "asset_minted",
+          "topics": [
+            "asset_minted"
+          ],
+          "data": {
+            "amount": "1000",
+            "caller": "GBL2V6RSU2K6U3C73HDQOCVWBCQ7H7ZJY6RECEHIUHSZ7M6736CDPBMO",
+            "to": "GAXRVA67D5NLMKP6H5IROF3IY5EMQW6AQBJLTUITGAAZUXMGY7CYO2KG",
+            "total_supply": "1000"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAMYXNzZXRfbWludGVkAAAAEQAAAAEAAAAEAAAADwAAAAZhbW91bnQAAAAAAAoAAAAAAAAAAAAAAAAAAAPoAAAADwAAAAZjYWxsZXIAAAAAABIAAAAAAAAAAFeq+jKmlepsX9nHBwq2CKHz/ynHokEQ6KHln7Pf34Q3AAAADwAAAAJ0bwAAAAAAEgAAAAAAAAAALxqD3x9atin+P1EXF2jHSMhbwIBSudETMAGaXYbHxYcAAAAPAAAADHRvdGFsX3N1cHBseQAAAAoAAAAAAAAAAAAAAAAAAAPo"
+        }
+      ],
+      "balance_after": "1000",
+      "total_supply_after": "1000"
+    },
+    {
+      "id": "mint-running-total-supply",
+      "description": "A second mint to a different holder. The `asset_minted` event carries the cumulative `total_supply` (1000), not the amount just minted (600) — the single most common SDK misreading of this event.",
+      "call": "mint_asset",
+      "sequence": [
+        "mint_asset(asset_manager, investor_alice, 400)",
+        "mint_asset(asset_manager, investor_bob, 600)"
+      ],
+      "result": {
+        "ok": true
+      },
+      "events": {
+        "note": "Soroban's test host exposes only the most recent invocation's events; this array is from the second mint.",
+        "emitted": [
+          {
+            "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+            "type": "contract",
+            "topic": "asset_minted",
+            "topics": [
+              "asset_minted"
+            ],
+            "data": {
+              "amount": "600",
+              "caller": "GBL2V6RSU2K6U3C73HDQOCVWBCQ7H7ZJY6RECEHIUHSZ7M6736CDPBMO",
+              "to": "GD4YM2BO77TT5BMWZC7SMH74GWZ5TPTKVTGPW5X6VUKFXLLD6W3XPRYN",
+              "total_supply": "1000"
+            },
+            "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAMYXNzZXRfbWludGVkAAAAEQAAAAEAAAAEAAAADwAAAAZhbW91bnQAAAAAAAoAAAAAAAAAAAAAAAAAAAJYAAAADwAAAAZjYWxsZXIAAAAAABIAAAAAAAAAAFeq+jKmlepsX9nHBwq2CKHz/ynHokEQ6KHln7Pf34Q3AAAADwAAAAJ0bwAAAAAAEgAAAAAAAAAA+YZoLv/nPoWWyL8mH/w1s9m+aqzM+3b+rRRbrWP1t3cAAAAPAAAADHRvdGFsX3N1cHBseQAAAAoAAAAAAAAAAAAAAAAAAAPo"
+          }
+        ]
+      },
+      "balances_after": {
+        "investor_alice": "400",
+        "investor_bob": "600"
+      },
+      "total_supply_after": "1000"
+    },
+    {
+      "id": "mint-by-admin-without-explicit-role",
+      "description": "The supreme admin bypasses role checks and can mint directly. Note the event's `caller` is the admin address.",
+      "call": "mint_asset",
+      "args": [
+        "admin",
+        "investor_alice",
+        "250"
+      ],
+      "result": {
+        "ok": true
+      },
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "asset_minted",
+          "topics": [
+            "asset_minted"
+          ],
+          "data": {
+            "amount": "250",
+            "caller": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
+            "to": "GAXRVA67D5NLMKP6H5IROF3IY5EMQW6AQBJLTUITGAAZUXMGY7CYO2KG",
+            "total_supply": "250"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAMYXNzZXRfbWludGVkAAAAEQAAAAEAAAAEAAAADwAAAAZhbW91bnQAAAAAAAoAAAAAAAAAAAAAAAAAAAD6AAAADwAAAAZjYWxsZXIAAAAAABIAAAAAAAAAAMFaefqCVcRaFqNxS4QFNN5d+YYLenDk2BVEp2hubZ/8AAAADwAAAAJ0bwAAAAAAEgAAAAAAAAAALxqD3x9atin+P1EXF2jHSMhbwIBSudETMAGaXYbHxYcAAAAPAAAADHRvdGFsX3N1cHBseQAAAAoAAAAAAAAAAAAAAAAAAAD6"
+        }
+      ],
+      "balance_after": "250"
+    },
+    {
+      "id": "supply-cap-two-step-governance",
+      "description": "The 2-step supply cap flow: propose, read the pending value, accept. A cap of 0 means unbounded. Minting exactly up to the cap succeeds.",
+      "supply_cap_default": "0",
+      "propose_events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "supply_cap_proposed",
+          "topics": [
+            "supply_cap_proposed"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
+            "current_cap": "0",
+            "proposed_cap": "5000"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAATc3VwcGx5X2NhcF9wcm9wb3NlZAAAAAARAAAAAQAAAAMAAAAPAAAABWFkbWluAAAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/wAAAAPAAAAC2N1cnJlbnRfY2FwAAAAAAoAAAAAAAAAAAAAAAAAAAAAAAAADwAAAAxwcm9wb3NlZF9jYXAAAAAKAAAAAAAAAAAAAAAAAAATiA=="
+        }
+      ],
+      "pending_supply_cap": "5000",
+      "accept_events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "supply_cap_amended",
+          "topics": [
+            "supply_cap_amended"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
+            "new_cap": "5000",
+            "previous_cap": "0"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAASc3VwcGx5X2NhcF9hbWVuZGVkAAAAAAARAAAAAQAAAAMAAAAPAAAABWFkbWluAAAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/wAAAAPAAAAB25ld19jYXAAAAAACgAAAAAAAAAAAAAAAAAAE4gAAAAPAAAADHByZXZpb3VzX2NhcAAAAAoAAAAAAAAAAAAAAAAAAAAA"
+        }
+      ],
+      "supply_cap_active": "5000",
+      "pending_after_accept": null,
+      "mint_to_cap": {
+        "ok": true
+      },
+      "total_supply_after": "5000"
+    },
+    {
+      "id": "holding-cap-two-step-governance",
+      "description": "The per-investor holding cap uses the same 2-step propose/accept flow. 0 means unrestricted.",
+      "holding_cap_default": "0",
+      "propose_events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "holding_cap_proposed",
+          "topics": [
+            "holding_cap_proposed"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
+            "current_cap": "0",
+            "proposed_cap": "2500"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAUaG9sZGluZ19jYXBfcHJvcG9zZWQAAAARAAAAAQAAAAMAAAAPAAAABWFkbWluAAAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/wAAAAPAAAAC2N1cnJlbnRfY2FwAAAAAAoAAAAAAAAAAAAAAAAAAAAAAAAADwAAAAxwcm9wb3NlZF9jYXAAAAAKAAAAAAAAAAAAAAAAAAAJxA=="
+        }
+      ],
+      "pending_holding_cap": "2500",
+      "accept_events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "holding_cap_amended",
+          "topics": [
+            "holding_cap_amended"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
+            "new_cap": "2500",
+            "previous_cap": "0"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAATaG9sZGluZ19jYXBfYW1lbmRlZAAAAAARAAAAAQAAAAMAAAAPAAAABWFkbWluAAAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/wAAAAPAAAAB25ld19jYXAAAAAACgAAAAAAAAAAAAAAAAAACcQAAAAPAAAADHByZXZpb3VzX2NhcAAAAAoAAAAAAAAAAAAAAAAAAAAA"
+        }
+      ],
+      "holding_cap_active": "2500"
+    },
+    {
+      "id": "cap-proposal-cancelled",
+      "description": "Cancelling an outstanding cap proposal. Both cancel functions clear the pending slot and leave the active cap unchanged. Note they emit NO event — unlike propose/accept — so an SDK tracking governance state must re-read `get_pending_*` after a cancel rather than waiting for an event that never arrives.",
+      "pending_supply_before_cancel": "9000",
+      "supply_cancel_events": [],
+      "pending_supply_after_cancel": null,
+      "supply_cap_still_active": "0",
+      "pending_holding_before_cancel": "3000",
+      "holding_cancel_events": [],
+      "pending_holding_after_cancel": null,
+      "holding_cap_still_active": "0"
+    }
+  ]
+}

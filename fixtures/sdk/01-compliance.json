@@ -1,0 +1,101 @@
+{
+  "$schema_version": 1,
+  "fixture": "01-compliance",
+  "purpose": "Compliance whitelist reads, writes, and the events they emit.",
+  "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+  "generator": "tests/sdk_fixtures.rs (cargo test --test sdk_fixtures)",
+  "notes": [
+    "Generated from live contract invocations in the Soroban test host; values are rendered from wire-level ScVal/XDR, never hand-written.",
+    "All addresses are synthetic, derived from SHA-256(\"aegis-fixture/<label>\"). They have no private keys and contain no real user data.",
+    "128-bit and 64-bit integers are encoded as decimal strings to stay lossless in JSON consumers that use IEEE-754 numbers."
+  ],
+  "scenarios": [
+    {
+      "id": "is-whitelisted-unknown-address",
+      "description": "An address that was never whitelisted reads false. This is the default state for every address, including the admin.",
+      "call": "is_whitelisted",
+      "args": [
+        "outsider_dave"
+      ],
+      "returns": false
+    },
+    {
+      "id": "whitelist-user-success",
+      "description": "A ComplianceOfficer whitelists an investor. The read flips to true and a `user_whitelisted` event is emitted.",
+      "call": "whitelist_user",
+      "args": [
+        "compliance_officer",
+        "investor_alice"
+      ],
+      "result": {
+        "ok": true
+      },
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "user_whitelisted",
+          "topics": [
+            "user_whitelisted"
+          ],
+          "data": {
+            "caller": "GAEGCFR5CC2J5E5FVFDOJJS4TGNCBWTDMNILRHETSHDWXOXIOFWA25JU",
+            "user": "GAXRVA67D5NLMKP6H5IROF3IY5EMQW6AQBJLTUITGAAZUXMGY7CYO2KG"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAQdXNlcl93aGl0ZWxpc3RlZAAAABEAAAABAAAAAgAAAA8AAAAGY2FsbGVyAAAAAAASAAAAAAAAAAAIYRY9ELSek6WpRuSmXJmaINpjY1C4nJORx2u66HFsDQAAAA8AAAAEdXNlcgAAABIAAAAAAAAAAC8ag98fWrYp/j9RFxdox0jIW8CAUrnREzABml2Gx8WH"
+        }
+      ],
+      "is_whitelisted_after": true
+    },
+    {
+      "id": "revoke-whitelist-success",
+      "description": "Revoking compliance approval flips the read back to false and emits a `whitelist_revoked` event.",
+      "call": "revoke_whitelist",
+      "args": [
+        "compliance_officer",
+        "investor_alice"
+      ],
+      "result": {
+        "ok": true
+      },
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "whitelist_revoked",
+          "topics": [
+            "whitelist_revoked"
+          ],
+          "data": {
+            "caller": "GAEGCFR5CC2J5E5FVFDOJJS4TGNCBWTDMNILRHETSHDWXOXIOFWA25JU",
+            "user": "GAXRVA67D5NLMKP6H5IROF3IY5EMQW6AQBJLTUITGAAZUXMGY7CYO2KG"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAARd2hpdGVsaXN0X3Jldm9rZWQAAAAAAAARAAAAAQAAAAIAAAAPAAAABmNhbGxlcgAAAAAAEgAAAAAAAAAACGEWPRC0npOlqUbkplyZmiDaY2NQuJyTkcdruuhxbA0AAAAPAAAABHVzZXIAAAASAAAAAAAAAAAvGoPfH1q2Kf4/URcXaMdIyFvAgFK50RMwAZpdhsfFhw=="
+        }
+      ],
+      "is_whitelisted_after": false
+    },
+    {
+      "id": "get-role-of-all-actors",
+      "description": "Role reads for every actor. A `#[contracttype]` unit enum is encoded on the wire as a single-element vector holding the variant name, so `Role::Admin` renders as [\"Admin\"] and an unassigned address as [\"None\"].",
+      "call": "get_role_of",
+      "returns_by_actor": {
+        "admin": [
+          "Admin"
+        ],
+        "compliance_officer": [
+          "ComplianceOfficer"
+        ],
+        "asset_manager": [
+          "AssetManager"
+        ],
+        "emergency_officer": [
+          "EmergencyOfficer"
+        ],
+        "outsider_dave": [
+          "None"
+        ]
+      }
+    }
+  ]
+}
