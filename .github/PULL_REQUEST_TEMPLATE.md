@@ -72,7 +72,8 @@ for detailed guidance.
 - [ ] Incomplete criteria include a rationale and, where applicable, a link to
       a follow-up issue.
 
-### Project Standards
+### Policy & Standards
+- [ ] I have read the [Contributor Evaluation Policy](../docs/contributor-evaluation-policy.md) and understand that **merge does not guarantee payment**.
 - [ ] I have read the `CONTRIBUTING.md` guidelines.
 - [ ] My code follows the Rust and Soroban formatting standards (ran `cargo fmt`).
 - [ ] My changes generate no new warnings (ran `cargo clippy`).
