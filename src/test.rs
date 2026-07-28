@@ -5,6 +5,7 @@ use crate::asset::{AssetMintedEvent, TransferEvent, YieldDistributedEvent};
 use crate::compliance::{UserWhitelistedEvent, WhitelistRevokedEvent};
 use crate::eligibility::InvestorEligibility;
 use crate::errors::Error;
+use crate::lifecycle::{AssetStatus, AssetStatusChangedEvent};
 use soroban_sdk::{
     testutils::{Address as _, Events as _},
     vec, Address, Env, IntoVal,
@@ -22,14 +23,28 @@ fn setup() -> (Env, AegisContractClient<'static>, Address, Address, Address) {
     (env, client, admin, user1, user2)
 }
 
+/// Like `setup()`, but also initializes the contract and transitions the asset
+/// lifecycle to `Active` so mint/transfer calls are not blocked by lifecycle
+/// guards. Use this in any test that performs a successful mint or transfer.
+fn setup_active() -> (Env, AegisContractClient<'static>, Address, Address, Address) {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, AegisContract);
+    let client = AegisContractClient::new(&env, &contract_id);
+    env.mock_all_auths();
+    let admin = Address::generate(&env);
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+    client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    (env, client, admin, user1, user2)
+}
+
 // ─── Happy-path lifecycle ─────────────────────────────────────────────────────
 
 #[test]
 fn test_lifecycle() {
-    let (env, client, admin, user1, user2) = setup();
+    let (env, client, admin, user1, user2) = setup_active();
     env.mock_all_auths();
-
-    client.initialize(&admin);
 
     client.set_role(&admin, &user1, &Role::ComplianceOfficer);
     client.set_role(&admin, &user2, &Role::AssetManager);
@@ -75,10 +90,9 @@ fn test_mint_reverts_with_compliance_officer_role() {
 
 #[test]
 fn test_mint_succeeds_with_asset_manager_role() {
-    let (env, client, admin, user1, user2) = setup();
+    let (env, client, admin, user1, user2) = setup_active();
     env.mock_all_auths();
 
-    client.initialize(&admin);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user2);
 
@@ -88,10 +102,9 @@ fn test_mint_succeeds_with_asset_manager_role() {
 
 #[test]
 fn test_mint_reverts_with_invalid_amount() {
-    let (env, client, admin, user1, user2) = setup();
+    let (env, client, admin, user1, user2) = setup_active();
     env.mock_all_auths();
 
-    client.initialize(&admin);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user2);
 
@@ -101,10 +114,9 @@ fn test_mint_reverts_with_invalid_amount() {
 
 #[test]
 fn test_mint_reverts_when_receiver_not_whitelisted() {
-    let (env, client, admin, user1, user2) = setup();
+    let (env, client, admin, user1, user2) = setup_active();
     env.mock_all_auths();
 
-    client.initialize(&admin);
     client.set_role(&admin, &user1, &Role::AssetManager);
 
     // user2 was never whitelisted
@@ -114,10 +126,9 @@ fn test_mint_reverts_when_receiver_not_whitelisted() {
 
 #[test]
 fn test_mint_succeeds_with_admin_role() {
-    let (env, client, admin, _user1, user2) = setup();
+    let (env, client, admin, _user1, user2) = setup_active();
     env.mock_all_auths();
 
-    client.initialize(&admin);
     client.whitelist_user(&admin, &user2);
 
     // Admin can mint without an explicit AssetManager role assignment
@@ -129,10 +140,9 @@ fn test_mint_succeeds_with_admin_role() {
 
 #[test]
 fn test_transfer_reverts_with_invalid_amount() {
-    let (env, client, admin, user1, user2) = setup();
+    let (env, client, admin, user1, user2) = setup_active();
     env.mock_all_auths();
 
-    client.initialize(&admin);
     client.whitelist_user(&admin, &user1);
     client.whitelist_user(&admin, &user2);
 
@@ -142,10 +152,9 @@ fn test_transfer_reverts_with_invalid_amount() {
 
 #[test]
 fn test_transfer_reverts_when_sender_not_whitelisted() {
-    let (env, client, admin, user1, user2) = setup();
+    let (env, client, admin, user1, user2) = setup_active();
     env.mock_all_auths();
 
-    client.initialize(&admin);
     client.whitelist_user(&admin, &user2);
 
     // user1 was never whitelisted
@@ -155,10 +164,9 @@ fn test_transfer_reverts_when_sender_not_whitelisted() {
 
 #[test]
 fn test_transfer_reverts_when_receiver_not_whitelisted() {
-    let (env, client, admin, user1, user2) = setup();
+    let (env, client, admin, user1, user2) = setup_active();
     env.mock_all_auths();
 
-    client.initialize(&admin);
     client.whitelist_user(&admin, &user1);
 
     // user2 was never whitelisted
@@ -168,10 +176,9 @@ fn test_transfer_reverts_when_receiver_not_whitelisted() {
 
 #[test]
 fn test_transfer_reverts_with_insufficient_balance() {
-    let (env, client, admin, user1, user2) = setup();
+    let (env, client, admin, user1, user2) = setup_active();
     env.mock_all_auths();
 
-    client.initialize(&admin);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user1);
     client.whitelist_user(&admin, &user2);
@@ -614,6 +621,7 @@ fn test_mint_blocked_when_paused() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user2);
 
@@ -634,6 +642,7 @@ fn test_transfer_blocked_when_paused() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::ComplianceOfficer);
     client.set_role(&admin, &user2, &Role::AssetManager);
     client.whitelist_user(&user1, &user1);
@@ -734,6 +743,7 @@ fn test_read_functions_available_when_paused() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::ComplianceOfficer);
     client.set_role(&admin, &user2, &Role::AssetManager);
     client.whitelist_user(&user1, &user1);
@@ -761,6 +771,7 @@ fn test_pause_unpause_full_lifecycle() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::ComplianceOfficer);
     client.set_role(&admin, &user2, &Role::AssetManager);
     client.whitelist_user(&user1, &user1);
@@ -859,6 +870,7 @@ fn test_mint_asset_emits_event_with_running_supply() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user2);
 
@@ -894,6 +906,7 @@ fn test_transfer_emits_event() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user1);
     client.whitelist_user(&admin, &user2);
@@ -925,6 +938,7 @@ fn test_blocked_transfer_emits_no_event() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.whitelist_user(&admin, &user1);
     // user2 is deliberately left off the whitelist.
 
@@ -971,6 +985,7 @@ fn test_supply_cap_default_is_unbounded() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.whitelist_user(&admin, &user2);
 
     // No cap set yet → minting is not blocked by a cap.
@@ -986,6 +1001,7 @@ fn test_supply_cap_requires_two_step_governance() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.whitelist_user(&admin, &user2);
 
     // Non-admin cannot propose.
@@ -1061,6 +1077,7 @@ fn test_supply_cap_lowering_below_supply_blocks_future_mints() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.whitelist_user(&admin, &user2);
 
     client.mint_asset(&admin, &user2, &1000);
@@ -1083,6 +1100,7 @@ fn test_supply_cap_zero_mint_rejected_without_state_change() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.whitelist_user(&admin, &user2);
     client.propose_supply_cap(&admin, &1000);
     client.accept_supply_cap(&admin);
@@ -1104,6 +1122,7 @@ fn test_supply_cap_boundary_and_exceeded_preserve_state() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.whitelist_user(&admin, &user2);
     client.propose_supply_cap(&admin, &1000);
     client.accept_supply_cap(&admin);
@@ -1127,6 +1146,7 @@ fn test_supply_cap_repeated_minting_near_cap_then_rejects() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.whitelist_user(&admin, &user2);
     client.propose_supply_cap(&admin, &1000);
     client.accept_supply_cap(&admin);
@@ -1153,6 +1173,7 @@ fn test_supply_cap_overflow_like_mint_keeps_state_consistent() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.whitelist_user(&admin, &user2);
     client.propose_supply_cap(&admin, &i128::MAX);
     client.accept_supply_cap(&admin);
@@ -1179,6 +1200,7 @@ fn test_holding_cap_default_is_unrestricted() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user2);
 
@@ -1195,6 +1217,7 @@ fn test_holding_cap_blocks_mint_over_limit() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user2);
 
@@ -1219,6 +1242,7 @@ fn test_holding_cap_blocks_transfer_over_limit() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user1);
     client.whitelist_user(&admin, &user2);
@@ -1287,6 +1311,7 @@ fn test_eligibility_default_state_is_ineligible() {
             balance: 0,
             holding_cap: 0,
             remaining_capacity: None,
+            asset_status: AssetStatus::Draft,
             can_receive: false,
             can_send: false,
         }
@@ -1299,6 +1324,7 @@ fn test_eligibility_reflects_whitelisted_holder_with_balance() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user2);
     client.mint_asset(&user1, &user2, &500);
@@ -1312,6 +1338,7 @@ fn test_eligibility_reflects_whitelisted_holder_with_balance() {
             balance: 500,
             holding_cap: 0,
             remaining_capacity: None,
+            asset_status: AssetStatus::Active,
             can_receive: true,
             can_send: true,
         }
@@ -1324,6 +1351,7 @@ fn test_eligibility_reflects_holding_cap_headroom() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user2);
     client.propose_holding_cap(&admin, &500);
@@ -1353,6 +1381,7 @@ fn test_eligibility_reflects_paused_contract() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user2);
     client.mint_asset(&user1, &user2, &500);
@@ -1375,6 +1404,7 @@ fn test_check_transfer_eligibility_true_for_eligible_transfer() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user1);
     client.whitelist_user(&admin, &user2);
@@ -1431,6 +1461,7 @@ fn test_check_transfer_eligibility_false_when_insufficient_balance() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user1);
     client.whitelist_user(&admin, &user2);
@@ -1446,6 +1477,7 @@ fn test_check_transfer_eligibility_false_when_over_holding_cap() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user1);
     client.whitelist_user(&admin, &user2);
@@ -1466,6 +1498,7 @@ fn test_check_transfer_eligibility_false_when_contract_paused() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user1);
     client.whitelist_user(&admin, &user2);
@@ -1484,6 +1517,7 @@ fn test_check_transfer_eligibility_matches_actual_transfer_outcomes() {
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user1);
     client.mint_asset(&user1, &user1, &1000);
@@ -1492,4 +1526,626 @@ fn test_check_transfer_eligibility_matches_actual_transfer_outcomes() {
     assert!(!client.check_transfer_eligibility(&user1, &user2, &100));
     let result = client.try_transfer(&user1, &user2, &100);
     assert_eq!(result, Err(Ok(Error::ReceiverNotWhitelisted)));
+}
+
+// ─── Asset lifecycle state machine ───────────────────────────────────────────
+//
+// Tests for the Draft → Active → Paused / Retired / Blocked state machine.
+// Each test covers one concern: default state, valid transitions, invalid
+// transitions, access control, operation gating per state, and event
+// emission. The asset-lifecycle "Paused" state is intentionally distinct
+// from the contract-level pause; both checks are validated independently.
+
+// ── Default state ─────────────────────────────────────────────────────────────
+
+#[test]
+fn test_asset_status_defaults_to_draft() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+
+    // Before any explicit set_asset_status call the status must be Draft.
+    assert_eq!(client.get_asset_status(), AssetStatus::Draft);
+}
+
+#[test]
+fn test_get_asset_status_readable_without_initialization() {
+    let (env, client, _admin, _user1, _user2) = setup();
+    // Calling get_asset_status on a freshly registered (but not initialized)
+    // contract must return Draft without panicking.
+    assert_eq!(client.get_asset_status(), AssetStatus::Draft);
+}
+
+// ── Access control ────────────────────────────────────────────────────────────
+
+#[test]
+fn test_set_asset_status_reverts_for_non_admin() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+
+    // user1 has no role — transition must be rejected.
+    let result = client.try_set_asset_status(&user1, &AssetStatus::Active);
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(client.get_asset_status(), AssetStatus::Draft);
+}
+
+#[test]
+fn test_set_asset_status_reverts_for_asset_manager() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+
+    // AssetManager cannot manage lifecycle — only the supreme admin can.
+    let result = client.try_set_asset_status(&user1, &AssetStatus::Active);
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+}
+
+#[test]
+fn test_set_asset_status_succeeds_for_admin() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+
+    let result = client.try_set_asset_status(&admin, &AssetStatus::Active);
+    assert!(result.is_ok());
+    assert_eq!(client.get_asset_status(), AssetStatus::Active);
+}
+
+#[test]
+fn test_set_asset_status_blocked_when_contract_paused() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.pause(&admin);
+
+    // Transitioning TO Active is blocked while the contract is paused.
+    let result = client.try_set_asset_status(&admin, &AssetStatus::Active);
+    assert_eq!(result, Err(Ok(Error::ContractPaused)));
+    // Status must remain Draft.
+    assert_eq!(client.get_asset_status(), AssetStatus::Draft);
+}
+
+#[test]
+fn test_set_asset_status_to_blocked_paused_retired_allowed_when_contract_paused() {
+    // The admin should be able to lock down or retire an asset during an
+    // incident without having to unpause the contract first.
+    let (env, client, admin, _user1, _user2) = setup_active();
+    env.mock_all_auths();
+
+    client.pause(&admin);
+
+    // Active → Blocked is allowed while the contract is paused.
+    client.set_asset_status(&admin, &AssetStatus::Blocked);
+    assert_eq!(client.get_asset_status(), AssetStatus::Blocked);
+
+    // Blocked → Active is NOT allowed (contract still paused).
+    let result = client.try_set_asset_status(&admin, &AssetStatus::Active);
+    assert_eq!(result, Err(Ok(Error::ContractPaused)));
+
+    // Unpause so we can set up the Paused → Blocked → Active path below.
+    client.unpause(&admin);
+
+    // Reset to Active so we can test the Paused (lifecycle) path.
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    client.pause(&admin);
+
+    // Active → Paused (lifecycle) is allowed while the contract is paused.
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+    assert_eq!(client.get_asset_status(), AssetStatus::Paused);
+
+    // Paused (lifecycle) → Retired is also allowed while the contract is paused.
+    client.set_asset_status(&admin, &AssetStatus::Retired);
+    assert_eq!(client.get_asset_status(), AssetStatus::Retired);
+}
+
+// ── Valid transitions ─────────────────────────────────────────────────────────
+
+#[test]
+fn test_transition_draft_to_active() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    assert_eq!(client.get_asset_status(), AssetStatus::Draft);
+
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    assert_eq!(client.get_asset_status(), AssetStatus::Active);
+}
+
+#[test]
+fn test_transition_active_to_paused() {
+    let (env, client, admin, _user1, _user2) = setup_active();
+    env.mock_all_auths();
+
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+    assert_eq!(client.get_asset_status(), AssetStatus::Paused);
+}
+
+#[test]
+fn test_transition_active_to_retired() {
+    let (env, client, admin, _user1, _user2) = setup_active();
+    env.mock_all_auths();
+
+    client.set_asset_status(&admin, &AssetStatus::Retired);
+    assert_eq!(client.get_asset_status(), AssetStatus::Retired);
+}
+
+#[test]
+fn test_transition_active_to_blocked() {
+    let (env, client, admin, _user1, _user2) = setup_active();
+    env.mock_all_auths();
+
+    client.set_asset_status(&admin, &AssetStatus::Blocked);
+    assert_eq!(client.get_asset_status(), AssetStatus::Blocked);
+}
+
+#[test]
+fn test_transition_paused_to_active() {
+    let (env, client, admin, _user1, _user2) = setup_active();
+    env.mock_all_auths();
+
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    assert_eq!(client.get_asset_status(), AssetStatus::Active);
+}
+
+#[test]
+fn test_transition_paused_to_retired() {
+    let (env, client, admin, _user1, _user2) = setup_active();
+    env.mock_all_auths();
+
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+    client.set_asset_status(&admin, &AssetStatus::Retired);
+    assert_eq!(client.get_asset_status(), AssetStatus::Retired);
+}
+
+#[test]
+fn test_transition_paused_to_blocked() {
+    let (env, client, admin, _user1, _user2) = setup_active();
+    env.mock_all_auths();
+
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+    client.set_asset_status(&admin, &AssetStatus::Blocked);
+    assert_eq!(client.get_asset_status(), AssetStatus::Blocked);
+}
+
+#[test]
+fn test_transition_blocked_to_active() {
+    let (env, client, admin, _user1, _user2) = setup_active();
+    env.mock_all_auths();
+
+    client.set_asset_status(&admin, &AssetStatus::Blocked);
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    assert_eq!(client.get_asset_status(), AssetStatus::Active);
+}
+
+// ── Invalid / rejected transitions ───────────────────────────────────────────
+
+#[test]
+fn test_transition_noop_same_status_rejected() {
+    let (env, client, admin, _user1, _user2) = setup_active();
+    env.mock_all_auths();
+
+    // Setting the current status to itself is a no-op and must be rejected.
+    let result = client.try_set_asset_status(&admin, &AssetStatus::Active);
+    assert_eq!(result, Err(Ok(Error::InvalidLifecycleTransition)));
+    // Status must not change.
+    assert_eq!(client.get_asset_status(), AssetStatus::Active);
+}
+
+#[test]
+fn test_transition_draft_to_paused_rejected() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+
+    let result = client.try_set_asset_status(&admin, &AssetStatus::Paused);
+    assert_eq!(result, Err(Ok(Error::InvalidLifecycleTransition)));
+    assert_eq!(client.get_asset_status(), AssetStatus::Draft);
+}
+
+#[test]
+fn test_transition_draft_to_retired_rejected() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+
+    let result = client.try_set_asset_status(&admin, &AssetStatus::Retired);
+    assert_eq!(result, Err(Ok(Error::InvalidLifecycleTransition)));
+    assert_eq!(client.get_asset_status(), AssetStatus::Draft);
+}
+
+#[test]
+fn test_transition_draft_to_blocked_rejected() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+
+    let result = client.try_set_asset_status(&admin, &AssetStatus::Blocked);
+    assert_eq!(result, Err(Ok(Error::InvalidLifecycleTransition)));
+    assert_eq!(client.get_asset_status(), AssetStatus::Draft);
+}
+
+#[test]
+fn test_transition_blocked_to_paused_rejected() {
+    let (env, client, admin, _user1, _user2) = setup_active();
+    env.mock_all_auths();
+
+    client.set_asset_status(&admin, &AssetStatus::Blocked);
+
+    let result = client.try_set_asset_status(&admin, &AssetStatus::Paused);
+    assert_eq!(result, Err(Ok(Error::InvalidLifecycleTransition)));
+    assert_eq!(client.get_asset_status(), AssetStatus::Blocked);
+}
+
+#[test]
+fn test_transition_blocked_to_retired_rejected() {
+    let (env, client, admin, _user1, _user2) = setup_active();
+    env.mock_all_auths();
+
+    client.set_asset_status(&admin, &AssetStatus::Blocked);
+
+    let result = client.try_set_asset_status(&admin, &AssetStatus::Retired);
+    assert_eq!(result, Err(Ok(Error::InvalidLifecycleTransition)));
+    assert_eq!(client.get_asset_status(), AssetStatus::Blocked);
+}
+
+#[test]
+fn test_retired_is_terminal_no_transition_out() {
+    let (env, client, admin, _user1, _user2) = setup_active();
+    env.mock_all_auths();
+
+    client.set_asset_status(&admin, &AssetStatus::Retired);
+
+    // Every possible target state must be rejected.
+    for next in &[
+        AssetStatus::Draft,
+        AssetStatus::Active,
+        AssetStatus::Paused,
+        AssetStatus::Retired, // no-op / same state
+        AssetStatus::Blocked,
+    ] {
+        let result = client.try_set_asset_status(&admin, next);
+        assert_eq!(
+            result,
+            Err(Ok(Error::InvalidLifecycleTransition)),
+            "Expected InvalidLifecycleTransition when transitioning from Retired to {:?}",
+            next
+        );
+    }
+    assert_eq!(client.get_asset_status(), AssetStatus::Retired);
+}
+
+// ── Operation gating per lifecycle state ─────────────────────────────────────
+
+#[test]
+fn test_mint_blocked_in_draft_state() {
+    let (env, client, admin, _user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    // Status is Draft by default — no activation.
+    client.whitelist_user(&admin, &user2);
+
+    let result = client.try_mint_asset(&admin, &user2, &100);
+    assert_eq!(result, Err(Ok(Error::AssetNotActive)));
+}
+
+#[test]
+fn test_transfer_blocked_in_draft_state() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    // Status is Draft — transfers should be blocked.
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+
+    let result = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(result, Err(Ok(Error::AssetNotActive)));
+}
+
+#[test]
+fn test_mint_blocked_in_lifecycle_paused_state() {
+    let (env, client, admin, _user1, user2) = setup_active();
+    env.mock_all_auths();
+
+    client.whitelist_user(&admin, &user2);
+    // Confirm mint works before pausing lifecycle.
+    assert!(client.try_mint_asset(&admin, &user2, &50).is_ok());
+
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+
+    let result = client.try_mint_asset(&admin, &user2, &50);
+    assert_eq!(result, Err(Ok(Error::AssetLifecyclePaused)));
+}
+
+#[test]
+fn test_transfer_blocked_in_lifecycle_paused_state() {
+    let (env, client, admin, user1, user2) = setup_active();
+    env.mock_all_auths();
+
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&admin, &user1, &500);
+
+    // Confirm transfer works before pausing lifecycle.
+    assert!(client.try_transfer(&user1, &user2, &100).is_ok());
+
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+
+    let result = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(result, Err(Ok(Error::AssetLifecyclePaused)));
+}
+
+#[test]
+fn test_mint_blocked_in_retired_state() {
+    let (env, client, admin, _user1, user2) = setup_active();
+    env.mock_all_auths();
+
+    client.whitelist_user(&admin, &user2);
+    client.set_asset_status(&admin, &AssetStatus::Retired);
+
+    let result = client.try_mint_asset(&admin, &user2, &100);
+    assert_eq!(result, Err(Ok(Error::AssetRetired)));
+}
+
+#[test]
+fn test_transfer_blocked_in_retired_state() {
+    let (env, client, admin, user1, user2) = setup_active();
+    env.mock_all_auths();
+
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&admin, &user1, &500);
+    client.set_asset_status(&admin, &AssetStatus::Retired);
+
+    let result = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(result, Err(Ok(Error::AssetRetired)));
+}
+
+#[test]
+fn test_mint_blocked_in_blocked_state() {
+    let (env, client, admin, _user1, user2) = setup_active();
+    env.mock_all_auths();
+
+    client.whitelist_user(&admin, &user2);
+    client.set_asset_status(&admin, &AssetStatus::Blocked);
+
+    let result = client.try_mint_asset(&admin, &user2, &100);
+    assert_eq!(result, Err(Ok(Error::AssetBlocked)));
+}
+
+#[test]
+fn test_transfer_blocked_in_blocked_state() {
+    let (env, client, admin, user1, user2) = setup_active();
+    env.mock_all_auths();
+
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&admin, &user1, &500);
+    client.set_asset_status(&admin, &AssetStatus::Blocked);
+
+    let result = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(result, Err(Ok(Error::AssetBlocked)));
+}
+
+#[test]
+fn test_mint_succeeds_after_reactivation_from_paused() {
+    let (env, client, admin, _user1, user2) = setup_active();
+    env.mock_all_auths();
+
+    client.whitelist_user(&admin, &user2);
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+
+    // Still blocked in Paused.
+    assert_eq!(
+        client.try_mint_asset(&admin, &user2, &100),
+        Err(Ok(Error::AssetLifecyclePaused))
+    );
+
+    // After reactivation, mint should work again.
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    assert!(client.try_mint_asset(&admin, &user2, &100).is_ok());
+    assert_eq!(client.get_balance_of(&user2), 100);
+}
+
+#[test]
+fn test_transfer_succeeds_after_reactivation_from_blocked() {
+    let (env, client, admin, user1, user2) = setup_active();
+    env.mock_all_auths();
+
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&admin, &user1, &500);
+
+    client.set_asset_status(&admin, &AssetStatus::Blocked);
+
+    // Still blocked.
+    assert_eq!(
+        client.try_transfer(&user1, &user2, &100),
+        Err(Ok(Error::AssetBlocked))
+    );
+
+    // Unblock → transfer works again.
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    assert!(client.try_transfer(&user1, &user2, &100).is_ok());
+    assert_eq!(client.get_balance_of(&user2), 100);
+}
+
+// ── Independent dual-pause checks ────────────────────────────────────────────
+
+#[test]
+fn test_contract_pause_and_lifecycle_pause_are_independent() {
+    // Verify that both must be clear for mint to succeed, and that each
+    // can block independently. The two checks are orthogonal.
+    let (env, client, admin, _user1, user2) = setup_active();
+    env.mock_all_auths();
+
+    client.whitelist_user(&admin, &user2);
+
+    // Contract paused only → ContractPaused error.
+    client.pause(&admin);
+    assert_eq!(
+        client.try_mint_asset(&admin, &user2, &100),
+        Err(Ok(Error::ContractPaused))
+    );
+
+    // Unpause contract — should now work (lifecycle is still Active).
+    client.unpause(&admin);
+    assert!(client.try_mint_asset(&admin, &user2, &10).is_ok());
+
+    // Lifecycle paused only → AssetLifecyclePaused error.
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+    assert_eq!(
+        client.try_mint_asset(&admin, &user2, &100),
+        Err(Ok(Error::AssetLifecyclePaused))
+    );
+
+    // Both paused simultaneously → ContractPaused wins (checked first).
+    client.pause(&admin);
+    assert_eq!(
+        client.try_mint_asset(&admin, &user2, &100),
+        Err(Ok(Error::ContractPaused))
+    );
+}
+
+#[test]
+fn test_lifecycle_paused_does_not_affect_contract_pause_state() {
+    // Pausing the asset lifecycle must not alter the contract-level pause flag.
+    let (env, client, admin, _user1, _user2) = setup_active();
+    env.mock_all_auths();
+
+    assert!(!client.is_paused());
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+    // Contract-level pause flag must still be false.
+    assert!(!client.is_paused());
+    assert_eq!(client.get_asset_status(), AssetStatus::Paused);
+}
+
+// ── Read-only functions unaffected by lifecycle state ────────────────────────
+
+#[test]
+fn test_get_asset_status_readable_in_all_states() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+
+    // Draft
+    assert_eq!(client.get_asset_status(), AssetStatus::Draft);
+
+    // Active
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    assert_eq!(client.get_asset_status(), AssetStatus::Active);
+
+    // Paused
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+    assert_eq!(client.get_asset_status(), AssetStatus::Paused);
+
+    // Blocked
+    client.set_asset_status(&admin, &AssetStatus::Blocked);
+    assert_eq!(client.get_asset_status(), AssetStatus::Blocked);
+
+    // Active again
+    client.set_asset_status(&admin, &AssetStatus::Active);
+
+    // Retired (terminal)
+    client.set_asset_status(&admin, &AssetStatus::Retired);
+    assert_eq!(client.get_asset_status(), AssetStatus::Retired);
+}
+
+// ── Event emission ────────────────────────────────────────────────────────────
+
+#[test]
+fn test_set_asset_status_emits_event() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("asset_status_changed",).into_val(&env),
+                AssetStatusChangedEvent {
+                    admin: admin.clone(),
+                    previous_status: AssetStatus::Draft,
+                    new_status: AssetStatus::Active,
+                }
+                .into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_set_asset_status_emits_event_on_each_valid_transition() {
+    let (env, client, admin, _user1, _user2) = setup_active();
+    env.mock_all_auths();
+
+    // Active → Blocked
+    client.set_asset_status(&admin, &AssetStatus::Blocked);
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("asset_status_changed",).into_val(&env),
+                AssetStatusChangedEvent {
+                    admin: admin.clone(),
+                    previous_status: AssetStatus::Active,
+                    new_status: AssetStatus::Blocked,
+                }
+                .into_val(&env),
+            ),
+        ]
+    );
+
+    // Blocked → Active
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("asset_status_changed",).into_val(&env),
+                AssetStatusChangedEvent {
+                    admin: admin.clone(),
+                    previous_status: AssetStatus::Blocked,
+                    new_status: AssetStatus::Active,
+                }
+                .into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_invalid_lifecycle_transition_emits_no_event() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+
+    // Draft → Retired is invalid; no event must be emitted.
+    let result = client.try_set_asset_status(&admin, &AssetStatus::Retired);
+    assert_eq!(result, Err(Ok(Error::InvalidLifecycleTransition)));
+    assert_eq!(env.events().all().events().len(), 0);
 }

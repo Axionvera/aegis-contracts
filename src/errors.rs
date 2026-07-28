@@ -53,4 +53,19 @@ pub enum Error {
     // ─── 6000s: Asset Metadata ──────────────────────────────────────────────
     // Reserved for future asset-metadata validation errors (name, symbol,
     // decimals, schema checks). No active failure paths use this range yet.
+
+    // ─── 7000s: Asset Lifecycle ─────────────────────────────────────────────
+    /// The asset is in Draft status; minting and transfers are not permitted
+    /// until the asset is activated.
+    AssetNotActive = 7000,
+    /// The asset is in Paused (lifecycle) status; minting and transfers are
+    /// suspended until the asset is reactivated.
+    AssetLifecyclePaused = 7001,
+    /// The asset is Retired; all minting and transfers are permanently blocked.
+    AssetRetired = 7002,
+    /// The asset is Blocked; minting and transfers are suspended pending
+    /// regulatory or admin review.
+    AssetBlocked = 7003,
+    /// The requested lifecycle transition is not valid from the current status.
+    InvalidLifecycleTransition = 7004,
 }

@@ -5,6 +5,7 @@ pub mod compliance;
 pub mod eligibility;
 pub mod errors;
 pub mod holding;
+pub mod lifecycle;
 pub mod supply_cap;
 #[cfg(test)]
 mod test;
@@ -12,6 +13,7 @@ mod test;
 use soroban_sdk::{contract, contractimpl, contracttype, Address, Env};
 
 pub use errors::Error;
+pub use lifecycle::AssetStatus;
 
 /// Role-based access control levels.
 /// Admin is the supreme authority; other roles grant scoped privileges.
@@ -59,6 +61,9 @@ pub enum DataKey {
     HoldingCap,
     /// The pending (proposed) holding cap awaiting 2-step acceptance.
     HoldingCapCandidate,
+    /// The lifecycle status of this asset (Draft, Active, Paused, Retired,
+    /// Blocked). Defaults to `Draft` when not set.
+    AssetStatus,
 }
 
 #[contract]

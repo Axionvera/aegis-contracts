@@ -3,6 +3,7 @@ use soroban_sdk::{contractimpl, contracttype, Address, Env};
 use crate::admin::{require_not_paused, require_role};
 use crate::compliance;
 use crate::holding;
+use crate::lifecycle::require_asset_operable;
 use crate::supply_cap;
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error, Role};
 
@@ -53,6 +54,7 @@ impl AegisContract {
         require_not_paused(&env);
         admin.require_auth();
         require_role(&env, &admin, Role::AssetManager);
+        require_asset_operable(&env);
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
@@ -70,7 +72,6 @@ impl AegisContract {
         // This is a compliance-sensitive control that applies to every mint,
         // including those performed by the admin/AssetManager.
         holding::enforce_holding_cap(&env, &to, amount);
-
 
         let mut balance: i128 = env
             .storage()
@@ -108,6 +109,7 @@ impl AegisContract {
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) -> Result<(), Error> {
         require_not_paused(&env);
         from.require_auth();
+        require_asset_operable(&env);
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
