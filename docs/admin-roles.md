@@ -70,11 +70,17 @@ All role changes emit Soroban events for off-chain indexing and audit trails:
 
 | Event | Topic | Payload |
 |---|---|---|
+| Contract initialized | `("contract_initialized",)` | `{ admin }` |
 | Role assigned | `("role_assigned",)` | `{ admin, target, role }` |
 | Role revoked | `("role_revoked",)` | `{ admin, target, role }` |
 | Admin transfer initiated | `("admin_transfer_initiated",)` | `{ current_admin, candidate }` |
 | Admin transferred | `("admin_transferred",)` | `{ previous_admin, new_admin }` |
 | Admin renounced | `("admin_renounced",)` | `{ previous_admin, new_admin }` |
+| Contract paused | `("contract_paused",)` | `{ admin }` |
+| Contract unpaused | `("contract_unpaused",)` | `{ admin }` |
+
+See [`events.md`](events.md) for the full event schema reference and
+SDK/dashboard compatibility notes.
 
 ## Role Assignment and Revocation Policy
 
