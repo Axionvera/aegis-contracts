@@ -34,6 +34,25 @@
         {
           "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
           "type": "contract",
+          "topic": "compliance_status_changed",
+          "topics": [
+            "compliance_status_changed"
+          ],
+          "data": {
+            "caller": "GAEGCFR5CC2J5E5FVFDOJJS4TGNCBWTDMNILRHETSHDWXOXIOFWA25JU",
+            "new_status": [
+              "Approved"
+            ],
+            "previous_status": [
+              "Unknown"
+            ],
+            "user": "GAXRVA67D5NLMKP6H5IROF3IY5EMQW6AQBJLTUITGAAZUXMGY7CYO2KG"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAZY29tcGxpYW5jZV9zdGF0dXNfY2hhbmdlZAAAAAAAABEAAAABAAAABAAAAA8AAAAGY2FsbGVyAAAAAAASAAAAAAAAAAAIYRY9ELSek6WpRuSmXJmaINpjY1C4nJORx2u66HFsDQAAAA8AAAAKbmV3X3N0YXR1cwAAAAAAEAAAAAEAAAABAAAADwAAAAhBcHByb3ZlZAAAAA8AAAAPcHJldmlvdXNfc3RhdHVzAAAAABAAAAABAAAAAQAAAA8AAAAHVW5rbm93bgAAAAAPAAAABHVzZXIAAAASAAAAAAAAAAAvGoPfH1q2Kf4/URcXaMdIyFvAgFK50RMwAZpdhsfFhw=="
+        },
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
           "topic": "user_whitelisted",
           "topics": [
             "user_whitelisted"
@@ -59,6 +78,25 @@
         "ok": true
       },
       "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "compliance_status_changed",
+          "topics": [
+            "compliance_status_changed"
+          ],
+          "data": {
+            "caller": "GAEGCFR5CC2J5E5FVFDOJJS4TGNCBWTDMNILRHETSHDWXOXIOFWA25JU",
+            "new_status": [
+              "Revoked"
+            ],
+            "previous_status": [
+              "Approved"
+            ],
+            "user": "GAXRVA67D5NLMKP6H5IROF3IY5EMQW6AQBJLTUITGAAZUXMGY7CYO2KG"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAZY29tcGxpYW5jZV9zdGF0dXNfY2hhbmdlZAAAAAAAABEAAAABAAAABAAAAA8AAAAGY2FsbGVyAAAAAAASAAAAAAAAAAAIYRY9ELSek6WpRuSmXJmaINpjY1C4nJORx2u66HFsDQAAAA8AAAAKbmV3X3N0YXR1cwAAAAAAEAAAAAEAAAABAAAADwAAAAdSZXZva2VkAAAAAA8AAAAPcHJldmlvdXNfc3RhdHVzAAAAABAAAAABAAAAAQAAAA8AAAAIQXBwcm92ZWQAAAAPAAAABHVzZXIAAAASAAAAAAAAAAAvGoPfH1q2Kf4/URcXaMdIyFvAgFK50RMwAZpdhsfFhw=="
+        },
         {
           "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
           "type": "contract",

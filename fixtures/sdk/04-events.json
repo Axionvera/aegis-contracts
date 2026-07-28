@@ -17,6 +17,25 @@
         {
           "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
           "type": "contract",
+          "topic": "compliance_status_changed",
+          "topics": [
+            "compliance_status_changed"
+          ],
+          "data": {
+            "caller": "GAEGCFR5CC2J5E5FVFDOJJS4TGNCBWTDMNILRHETSHDWXOXIOFWA25JU",
+            "new_status": [
+              "Approved"
+            ],
+            "previous_status": [
+              "Unknown"
+            ],
+            "user": "GCETMP6KNA4OB27H554CJJURJ7W2FCWJZUG3PCMC2DM73FVIARPHCMH2"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAZY29tcGxpYW5jZV9zdGF0dXNfY2hhbmdlZAAAAAAAABEAAAABAAAABAAAAA8AAAAGY2FsbGVyAAAAAAASAAAAAAAAAAAIYRY9ELSek6WpRuSmXJmaINpjY1C4nJORx2u66HFsDQAAAA8AAAAKbmV3X3N0YXR1cwAAAAAAEAAAAAEAAAABAAAADwAAAAhBcHByb3ZlZAAAAA8AAAAPcHJldmlvdXNfc3RhdHVzAAAAABAAAAABAAAAAQAAAA8AAAAHVW5rbm93bgAAAAAPAAAABHVzZXIAAAASAAAAAAAAAACJNj/KaDjg6+fveCSmkU/toorJzQ23iYLQ2f2WqARecQ=="
+        },
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
           "topic": "user_whitelisted",
           "topics": [
             "user_whitelisted"
@@ -33,6 +52,25 @@
       "id": "event-whitelist-revoked",
       "description": "Topic `whitelist_revoked`, emitted by `revoke_whitelist`.",
       "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "compliance_status_changed",
+          "topics": [
+            "compliance_status_changed"
+          ],
+          "data": {
+            "caller": "GAEGCFR5CC2J5E5FVFDOJJS4TGNCBWTDMNILRHETSHDWXOXIOFWA25JU",
+            "new_status": [
+              "Revoked"
+            ],
+            "previous_status": [
+              "Approved"
+            ],
+            "user": "GCETMP6KNA4OB27H554CJJURJ7W2FCWJZUG3PCMC2DM73FVIARPHCMH2"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAZY29tcGxpYW5jZV9zdGF0dXNfY2hhbmdlZAAAAAAAABEAAAABAAAABAAAAA8AAAAGY2FsbGVyAAAAAAASAAAAAAAAAAAIYRY9ELSek6WpRuSmXJmaINpjY1C4nJORx2u66HFsDQAAAA8AAAAKbmV3X3N0YXR1cwAAAAAAEAAAAAEAAAABAAAADwAAAAdSZXZva2VkAAAAAA8AAAAPcHJldmlvdXNfc3RhdHVzAAAAABAAAAABAAAAAQAAAA8AAAAIQXBwcm92ZWQAAAAPAAAABHVzZXIAAAASAAAAAAAAAACJNj/KaDjg6+fveCSmkU/toorJzQ23iYLQ2f2WqARecQ=="
+        },
         {
           "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
           "type": "contract",
@@ -340,6 +378,50 @@
             "previous_cap": "0"
           },
           "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAATaG9sZGluZ19jYXBfYW1lbmRlZAAAAAARAAAAAQAAAAMAAAAPAAAABWFkbWluAAAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/wAAAAPAAAAB25ld19jYXAAAAAACgAAAAAAAAAAAAAAAAAAB9AAAAAPAAAADHByZXZpb3VzX2NhcAAAAAoAAAAAAAAAAAAAAAAAAAAA"
+        }
+      ]
+    },
+    {
+      "id": "event-config-proposed",
+      "description": "Topic `config_proposed`, step 1 of protocol config governance.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "config_proposed",
+          "topics": [
+            "config_proposed"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
+            "proposed_config": {
+              "max_batch_size": 50,
+              "min_transfer_amount": "100"
+            }
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAPY29uZmlnX3Byb3Bvc2VkAAAAABEAAAABAAAAAgAAAA8AAAAFYWRtaW4AAAAAAAASAAAAAAAAAADBWnn6glXEWhajcUuEBTTeXfmGC3pw5NgVRKdobm2f/AAAAA8AAAAPcHJvcG9zZWRfY29uZmlnAAAAABEAAAABAAAAAgAAAA8AAAAObWF4X2JhdGNoX3NpemUAAAAAAAMAAAAyAAAADwAAABNtaW5fdHJhbnNmZXJfYW1vdW50AAAAAAoAAAAAAAAAAAAAAAAAAABk"
+        }
+      ]
+    },
+    {
+      "id": "event-config-amended",
+      "description": "Topic `config_amended`, step 2 — the new config is now active.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "config_amended",
+          "topics": [
+            "config_amended"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
+            "new_config": {
+              "max_batch_size": 50,
+              "min_transfer_amount": "100"
+            }
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAOY29uZmlnX2FtZW5kZWQAAAAAABEAAAABAAAAAgAAAA8AAAAFYWRtaW4AAAAAAAASAAAAAAAAAADBWnn6glXEWhajcUuEBTTeXfmGC3pw5NgVRKdobm2f/AAAAA8AAAAKbmV3X2NvbmZpZwAAAAAAEQAAAAEAAAACAAAADwAAAA5tYXhfYmF0Y2hfc2l6ZQAAAAAAAwAAADIAAAAPAAAAE21pbl90cmFuc2Zlcl9hbW91bnQAAAAACgAAAAAAAAAAAAAAAAAAAGQ="
         }
       ]
     },
