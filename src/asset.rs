@@ -2,6 +2,8 @@ use soroban_sdk::{contractimpl, contracttype, Address, Env};
 
 use crate::admin::{require_not_paused, require_role};
 use crate::compliance;
+use crate::holding;
+use crate::supply_cap;
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error, Role};
 
 // ─── Events ───────────────────────────────────────────────────────────────────
@@ -59,6 +61,17 @@ impl AegisContract {
             return Err(Error::ReceiverNotWhitelisted);
         }
 
+        // Enforce the active supply cap before increasing total supply.
+        // This is a compliance-sensitive control: it must run even for the
+        // admin/AssetManager, since the cap is a protocol-level invariant.
+        supply_cap::enforce_supply_cap(&env, amount);
+
+        // Enforce the per-investor holding cap before crediting the receiver.
+        // This is a compliance-sensitive control that applies to every mint,
+        // including those performed by the admin/AssetManager.
+        holding::enforce_holding_cap(&env, &to, amount);
+
+
         let mut balance: i128 = env
             .storage()
             .persistent()
@@ -105,6 +118,11 @@ impl AegisContract {
         if !compliance::is_whitelisted(&env, &to) {
             return Err(Error::ReceiverNotWhitelisted);
         }
+
+        // Enforce the per-investor holding cap before crediting the receiver.
+        // Applies uniformly to transfers, so no investor can be credited
+        // beyond their permitted holding.
+        holding::enforce_holding_cap(&env, &to, amount);
 
         let mut from_balance: i128 = env
             .storage()

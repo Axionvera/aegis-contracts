@@ -961,3 +961,214 @@ fn test_distribute_yield_emits_event() {
         ]
     );
 }
+
+// ─── Supply cap amendment governance (#32) ────────────────────────────────────
+
+#[test]
+fn test_supply_cap_default_is_unbounded() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user2);
+
+    // No cap set yet → minting is not blocked by a cap.
+    assert_eq!(client.get_supply_cap(), 0);
+    assert!(client.get_pending_supply_cap().is_none());
+    let r = client.try_mint_asset(&admin, &user2, &1000);
+    assert!(r.is_ok());
+}
+
+#[test]
+fn test_supply_cap_requires_two_step_governance() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user2);
+
+    // Non-admin cannot propose.
+    let r = client.try_propose_supply_cap(&user1, &1000);
+    assert!(r.is_err());
+
+    // Propose, then cap is still not active (no-op until accepted).
+    client.propose_supply_cap(&admin, &1000);
+    assert_eq!(client.get_supply_cap(), 0);
+    assert_eq!(client.get_pending_supply_cap(), Some(1000));
+
+    // Mint below proposed cap still works (active cap is still 0).
+    let r = client.try_mint_asset(&admin, &user2, &500);
+    assert!(r.is_ok());
+
+    // Accept activates the cap.
+    client.accept_supply_cap(&admin);
+    assert_eq!(client.get_supply_cap(), 1000);
+    assert!(client.get_pending_supply_cap().is_none());
+
+    // Now minting above the cap is rejected.
+    let r = client.try_mint_asset(&admin, &user2, &600);
+    assert!(r.is_err());
+
+    // Minting up to the cap is allowed.
+    let r = client.try_mint_asset(&admin, &user2, &500);
+    assert!(r.is_ok());
+}
+
+#[test]
+fn test_supply_cap_proposal_cancel() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+
+    client.propose_supply_cap(&admin, &500);
+    assert_eq!(client.get_pending_supply_cap(), Some(500));
+
+    // Cancel clears the proposal; accept should then fail.
+    client.cancel_supply_cap_proposal(&admin);
+    assert!(client.get_pending_supply_cap().is_none());
+
+    let r = client.try_accept_supply_cap(&admin);
+    assert!(r.is_err());
+    assert_eq!(client.get_supply_cap(), 0);
+}
+
+#[test]
+fn test_supply_cap_noop_rejected() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    // Proposing the same value as the active cap (0) is a no-op → rejected.
+    let r = client.try_propose_supply_cap(&admin, &0);
+    assert!(r.is_err());
+}
+
+#[test]
+fn test_supply_cap_negative_rejected() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    let r = client.try_propose_supply_cap(&admin, &-1);
+    assert!(r.is_err());
+}
+
+#[test]
+fn test_supply_cap_lowering_below_supply_blocks_future_mints() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user2);
+
+    client.mint_asset(&admin, &user2, &1000);
+    assert_eq!(client.get_total_supply(), 1000);
+
+    // Lower the cap below current supply (allowed — does not burn supply).
+    client.propose_supply_cap(&admin, &500);
+    client.accept_supply_cap(&admin);
+    assert_eq!(client.get_supply_cap(), 500);
+
+    // Existing supply (1000) now exceeds the cap; further mints are blocked
+    // until supply falls or the cap is raised.
+    let r = client.try_mint_asset(&admin, &user2, &1);
+    assert!(r.is_err());
+}
+
+// ─── Investor holding restriction checks (#33) ───────────────────────────────
+
+#[test]
+fn test_holding_cap_default_is_unrestricted() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user2);
+
+    // No holding cap set → minting to a holder is not blocked by a cap.
+    assert_eq!(client.get_holding_cap(), 0);
+    let r = client.try_mint_asset(&user1, &user2, &10000);
+    assert!(r.is_ok());
+    assert_eq!(client.get_balance_of(&user2), 10000);
+}
+
+#[test]
+fn test_holding_cap_blocks_mint_over_limit() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user2);
+
+    // Propose + accept a holding cap of 500.
+    client.propose_holding_cap(&admin, &500);
+    client.accept_holding_cap(&admin);
+    assert_eq!(client.get_holding_cap(), 500);
+
+    // Mint up to the cap is allowed.
+    let r = client.try_mint_asset(&user1, &user2, &500);
+    assert!(r.is_ok());
+    assert_eq!(client.get_balance_of(&user2), 500);
+
+    // Mint that would push the holder over the cap is rejected.
+    let r = client.try_mint_asset(&user1, &user2, &1);
+    assert!(r.is_err());
+}
+
+#[test]
+fn test_holding_cap_blocks_transfer_over_limit() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+
+    // Give user1 a balance, then cap user2's holding at 300.
+    client.mint_asset(&user1, &user1, &1000);
+    client.propose_holding_cap(&admin, &300);
+    client.accept_holding_cap(&admin);
+
+    // Transfer that would push user2 over 300 is rejected.
+    let r = client.try_transfer(&user1, &user2, &301);
+    assert!(r.is_err());
+
+    // Transfer within the cap is allowed.
+    let r = client.try_transfer(&user1, &user2, &300);
+    assert!(r.is_ok());
+    assert_eq!(client.get_balance_of(&user2), 300);
+}
+
+#[test]
+fn test_holding_cap_governance_requires_admin_and_two_steps() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+
+    // Non-admin cannot propose.
+    let r = client.try_propose_holding_cap(&user1, &100);
+    assert!(r.is_err());
+
+    // Propose, then cap is still not active.
+    client.propose_holding_cap(&admin, &100);
+    assert_eq!(client.get_holding_cap(), 0);
+    assert_eq!(client.get_pending_holding_cap(), Some(100));
+
+    // Accept activates it.
+    client.accept_holding_cap(&admin);
+    assert_eq!(client.get_holding_cap(), 100);
+    assert!(client.get_pending_holding_cap().is_none());
+
+    // No-op proposal (== active) is rejected.
+    let r = client.try_propose_holding_cap(&admin, &100);
+    assert!(r.is_err());
+
+    // Negative proposal is rejected.
+    let r = client.try_propose_holding_cap(&admin, &-1);
+    assert!(r.is_err());
+}
