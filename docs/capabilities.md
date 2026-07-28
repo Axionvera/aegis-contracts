@@ -71,11 +71,16 @@ not file them as bugs or wait for them:
 | Capability | Why it is `Unsupported` |
 | --- | --- |
 | `minting.burning` | No burn entrypoint exists. Supply is monotonically increasing; a lowered supply cap blocks future mints rather than burning existing units (see [`supply-cap-governance.md`](supply-cap-governance.md)). |
+
+| `compliance.investor_tiers` | `DataKey::Whitelist` is a single boolean carrying no jurisdiction, accreditation tier, or investor-class data. Regime-specific segmentation (e.g. Reg D vs. Reg S) is off-chain only — see [`threat-model.md`](threat-model.md) C-4. |
+| `events.transfer_restriction_events` | **Structurally impossible.** Soroban discards events from a reverted invocation, so a blocked transfer can never durably publish one. Watch the granular restriction error codes (`3004`, `4000`, `4001`, `7000`–`7004`) or call `check_transfer_restriction` instead — see [`events.md`](events.md#transfer-restriction-events). |
+
 | `compliance.investor_tiers` | The compliance lifecycle models compliance *state* (`Unknown`/`Pending`/`Approved`/`Revoked`/`Blocked`), not investor *class*. It carries no jurisdiction or accreditation-tier data, so regime-specific segmentation (e.g. Reg D vs. Reg S) is off-chain only — see [`threat-model.md`](threat-model.md) C-4. |
 | `events.transfer_restriction_events` | **Structurally impossible.** Soroban discards events from a reverted invocation, so a blocked transfer can never durably publish one. Watch error codes `3004`/`4000`/`4001` instead — see [`events.md`](events.md#transfer-restriction-events). |
 
+
 `Planned` items — `allowances`, `transfer_from`, `transfer_fees`,
-`decimals`, `sep41_token_interface`, `batch_whitelisting`,
+`decimals`, `sep41_token_interface`,
 `yield_distribution`, and `asset_registered_event` — correspond to the gaps
 tracked in
 [`dashboard-readiness-review.md`](dashboard-readiness-review.md) and the
@@ -116,7 +121,8 @@ pub struct ContractCapabilities {
 | `module_enabled` | `bool` | `true` | Compliance module compiled in. |
 | `whitelist` | status | `Supported` | `whitelist_user`. |
 | `whitelist_revocation` | status | `Supported` | `revoke_whitelist`. |
-| `batch_whitelisting` | status | `Planned` | Many addresses per invocation. |
+| `batch_whitelisting` | status | `Supported` | Many addresses per invocation via `batch_set_compliance_status`. |
+| `batch_status_updates` | status | `Supported` | Atomic multi-address lifecycle updates via `batch_set_compliance_status`. |
 | `investor_tiers` | status | `Unsupported` | Jurisdiction/accreditation tiers. |
 | `lifecycle_states` | status | `Supported` | Five-state compliance lifecycle + `get_compliance_status`. See [`compliance-lifecycle.md`](compliance-lifecycle.md). |
 | `lifecycle_transitions` | status | `Supported` | Enforced transition matrix on `set_compliance_status`, plus the pre-flight transition reads. |
@@ -147,6 +153,7 @@ pub struct ContractCapabilities {
 | `transfer_from` | status | `Planned` | SEP-41 `transfer_from`. |
 | `transfer_fees` | status | `Planned` | Fee deduction on transfer. |
 | `transfer_eligibility_check` | status | `Supported` | `check_transfer_eligibility`. |
+| `transfer_restriction_reasons` | status | `Supported` | `check_transfer_restriction`, `check_mint_restriction`, `get_restriction_code` — granular blocked-transfer reason codes. See [transfer-restrictions.md](transfer-restrictions.md). |
 
 #### `pause`
 
@@ -204,6 +211,7 @@ Registry (also returned by `get_capability_keys()`):
 | `whitelist` | `compliance.whitelist` |
 | `whitelist_revocation` | `compliance.whitelist_revocation` |
 | `batch_whitelisting` | `compliance.batch_whitelisting` |
+| `compliance_batch_updates` | `compliance.batch_status_updates` |
 | `investor_tiers` | `compliance.investor_tiers` |
 | `compliance_lifecycle` | `compliance.lifecycle_states` |
 | `compliance_transitions` | `compliance.lifecycle_transitions` |
@@ -218,6 +226,7 @@ Registry (also returned by `get_capability_keys()`):
 | `transfer_from` | `transfers.transfer_from` |
 | `transfer_fees` | `transfers.transfer_fees` |
 | `transfer_eligibility` | `transfers.transfer_eligibility_check` |
+| `transfer_restriction_reasons` | `transfers.transfer_restriction_reasons` |
 | `pause` | `pause.global_pause` |
 | `asset_lifecycle` | `pause.asset_lifecycle` |
 | `metadata` | `metadata.name_and_symbol` |
@@ -238,8 +247,12 @@ within a schema version.
 ## Versioning
 
 `capability_version` is the schema version of the response
+
+(`CAPABILITY_SCHEMA_VERSION`, currently `2`); `contract_version` is the
+
 (`CAPABILITY_SCHEMA_VERSION`, currently `2` — bumped when the compliance
 lifecycle fields and keys were added); `contract_version` is the
+
 deployed crate's semantic version.
 
 Bump `capability_version` whenever a field is **added** to any capability

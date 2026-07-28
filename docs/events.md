@@ -43,7 +43,7 @@ name, never on struct declaration order or Rust type layout.**
 | `admin_renounced`             | `AdminTransferredEvent`      | `admin.rs`      | `renounce_admin`                                | `previous_admin: Address`, `new_admin: Address` (both equal to the renouncing admin) |
 | `contract_paused`             | `ContractPausedEvent`        | `admin.rs`      | `pause`                                         | `admin: Address` (the pausing caller — Admin or EmergencyOfficer) |
 | `contract_unpaused`           | `ContractUnpausedEvent`      | `admin.rs`      | `unpause`                                       | `admin: Address` |
-| `compliance_status_changed`   | `ComplianceStatusChangedEvent` | `compliance.rs` | `set_compliance_status`, and `whitelist_user` / `revoke_whitelist` when they cause a real transition | `caller: Address`, `user: Address`, `previous_status: ComplianceStatus`, `new_status: ComplianceStatus` |
+| `compliance_status_changed`   | `ComplianceStatusChangedEvent` | `compliance.rs` | `set_compliance_status`, `batch_set_compliance_status`, and `whitelist_user` / `revoke_whitelist` when they cause a real transition | `caller: Address`, `user: Address`, `previous_status: ComplianceStatus`, `new_status: ComplianceStatus` |
 | `user_whitelisted`            | `UserWhitelistedEvent`       | `compliance.rs` | `whitelist_user` (legacy, always)               | `caller: Address`, `user: Address` |
 | `whitelist_revoked`           | `WhitelistRevokedEvent`      | `compliance.rs` | `revoke_whitelist` (legacy, always)             | `caller: Address`, `user: Address` |
 | `asset_minted`                | `AssetMintedEvent`           | `asset.rs`      | `mint_asset`                                    | `caller: Address`, `to: Address`, `amount: i128`, `total_supply: i128` |
@@ -118,13 +118,34 @@ never having existed.
 Instead, the restriction is durably observable via the standardized revert
 codes already defined in [`docs/error-codes.md`](error-codes.md):
 
+- `3000 Unauthorized` (caller may not perform the operation)
+- `3004 ContractPaused` (blocks all transfers while paused)
 - `4000 SenderNotWhitelisted`
 - `4001 ReceiverNotWhitelisted`
-- `3004 ContractPaused` (blocks all transfers while paused)
+- `5000 InvalidAmount` / `5001 InsufficientBalance`
+- `7000 AssetPausedRestriction` / `7001 AssetRetiredRestriction` /
+  `7002 AssetBlockedRestriction`
+- `7003 HoldingCapExceeded` / `7004 SupplyCapExceeded`
+
+Each of these maps 1:1 onto a `RestrictionReason` — see
+[`transfer-restrictions.md`](transfer-restrictions.md) for the full mapping,
+check-order precedence, and recommended user-facing copy. Clients can also
+obtain the reason *before* submitting via `check_transfer_restriction` /
+`check_mint_restriction`, which is the recommended pattern precisely because no
+event will be emitted if the transfer reverts.
 
 SDKs and indexers that need to record restricted-transfer attempts for audit
 purposes should watch for these error codes on failed `transfer`/`mint_asset`
 simulations or failed transaction results, not for an event.
+
+
+This is advertised on-chain: `get_capabilities()` reports
+`events.transfer_restriction_events` as `Unsupported` (not `Planned`), so a
+client can tell the difference between "not built yet" and "structurally
+impossible, stop waiting for it". The compensating capability,
+`transfers.transfer_restriction_reasons`, is reported as `Supported`. See
+[`capabilities.md`](capabilities.md).
+
 
 ## Compatibility tests
 

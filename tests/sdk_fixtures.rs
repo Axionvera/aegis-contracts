@@ -30,6 +30,7 @@ mod support;
 
 use soroban_sdk::{Address, String as SorobanString};
 
+use aegis_contracts::compliance::{ComplianceBatchUpdate, ComplianceStatus};
 use aegis_contracts::lifecycle::AssetStatus;
 use aegis_contracts::{Error, Role};
 
@@ -94,6 +95,7 @@ fn category_of(code: u32) -> &'static str {
         4 => "compliance",
         5 => "minting_transfers",
         6 => "asset_metadata",
+        7 => "transfer_restrictions",
         _ => "unknown",
     }
 }
@@ -117,6 +119,12 @@ fn error_name(e: Error) -> &'static str {
         Error::NotPaused => "NotPaused",
         Error::SenderNotWhitelisted => "SenderNotWhitelisted",
         Error::ReceiverNotWhitelisted => "ReceiverNotWhitelisted",
+        Error::SenderBlocked => "SenderBlocked",
+        Error::ReceiverBlocked => "ReceiverBlocked",
+        Error::SenderCompliancePending => "SenderCompliancePending",
+        Error::ReceiverCompliancePending => "ReceiverCompliancePending",
+        Error::InvalidComplianceTransition => "InvalidComplianceTransition",
+        Error::ComplianceStatusUnchanged => "ComplianceStatusUnchanged",
         Error::InvalidAmount => "InvalidAmount",
         Error::InsufficientBalance => "InsufficientBalance",
         Error::SupplyCapExceeded => "SupplyCapExceeded",
@@ -126,8 +134,11 @@ fn error_name(e: Error) -> &'static str {
         Error::AssetRetired => "AssetRetired",
         Error::AssetBlocked => "AssetBlocked",
         Error::InvalidLifecycleTransition => "InvalidLifecycleTransition",
+        Error::InvalidAssetStatusTransition => "InvalidAssetStatusTransition",
         Error::AssetMetadataUpdateBlocked => "AssetMetadataUpdateBlocked",
-        _ => "UnknownError",
+        Error::AssetPausedRestriction => "AssetPausedRestriction",
+        Error::AssetRetiredRestriction => "AssetRetiredRestriction",
+        Error::AssetBlockedRestriction => "AssetBlockedRestriction",
     }
 }
 
@@ -346,7 +357,75 @@ fn fixture_compliance() {
         );
     }
 
-    // 4 — role read surface.
+    // 4 — batch lifecycle update.
+    {
+        let h = Harness::new();
+        let c = h.client();
+        c.initialize(&h.actor("admin"));
+        c.set_role(
+            &h.actor("admin"),
+            &h.actor("compliance_officer"),
+            &Role::ComplianceOfficer,
+        );
+
+        let officer = h.actor("compliance_officer");
+        let alice = h.actor("investor_alice");
+        let bob = h.actor("investor_bob");
+        let updates = soroban_sdk::vec![
+            &h.env,
+            ComplianceBatchUpdate {
+                user: alice.clone(),
+                new_status: ComplianceStatus::Pending,
+            },
+            ComplianceBatchUpdate {
+                user: bob.clone(),
+                new_status: ComplianceStatus::Approved,
+            },
+        ];
+
+        let applied = c.batch_set_compliance_status(&officer, &updates);
+        let events = h.events();
+        assert_eq!(applied, 2);
+        assert_eq!(c.get_compliance_status(&alice), ComplianceStatus::Pending);
+        assert_eq!(c.get_compliance_status(&bob), ComplianceStatus::Approved);
+
+        let mut alice_update = JsonObj::new();
+        alice_update
+            .push("user", Json::str("investor_alice"))
+            .push("new_status", Json::str("Pending"));
+        let mut bob_update = JsonObj::new();
+        bob_update
+            .push("user", Json::str("investor_bob"))
+            .push("new_status", Json::str("Approved"));
+
+        scenarios.push(
+            Scenario::new(
+                "batch-set-compliance-status-success",
+                "A ComplianceOfficer applies two typed lifecycle updates atomically. \
+                 The call returns the applied count and emits one lifecycle event per \
+                 address in input order.",
+            )
+            .set("call", Json::str("batch_set_compliance_status"))
+            .set(
+                "args",
+                Json::Arr(vec![
+                    Json::str("compliance_officer"),
+                    Json::Arr(vec![alice_update.build(), bob_update.build()]),
+                ]),
+            )
+            .set("result", ok_result())
+            .set("applied_count", h.render(applied))
+            .set("events", events)
+            .set(
+                "alice_status_after",
+                h.render(c.get_compliance_status(&alice)),
+            )
+            .set("bob_status_after", h.render(c.get_compliance_status(&bob)))
+            .build(),
+        );
+    }
+
+    // 5 — role read surface.
     {
         let h = bootstrap();
         let c = h.client();

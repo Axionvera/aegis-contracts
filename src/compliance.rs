@@ -1,4 +1,3 @@
-
 //! Compliance lifecycle state machine.
 //!
 //! Investor compliance is modelled as an explicit five-state lifecycle rather
@@ -26,10 +25,7 @@
 // `#[contractevent]` macro must preserve every emitted shape byte-for-byte.
 #![allow(deprecated)]
 
-use soroban_sdk::{contractimpl, contracttype, Address, Env};
-
-
-use soroban_sdk::{vec, Vec};
+use soroban_sdk::{contractimpl, contracttype, vec, Address, Env, Vec};
 
 use crate::admin::{get_admin, require_any_role, require_not_paused};
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error, Role};
@@ -106,6 +102,18 @@ pub struct ComplianceStatusChangedEvent {
     pub caller: Address,
     pub user: Address,
     pub previous_status: ComplianceStatus,
+    pub new_status: ComplianceStatus,
+}
+
+/// One requested status change inside a compliance batch update.
+///
+/// The batch operation applies the same lifecycle matrix as
+/// `set_compliance_status`; this type only groups the target address and the
+/// desired target state so SDKs and dashboards can build typed requests.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ComplianceBatchUpdate {
+    pub user: Address,
     pub new_status: ComplianceStatus,
 }
 
@@ -250,6 +258,36 @@ fn apply_transition(
     );
 }
 
+fn validate_transition(
+    env: &Env,
+    caller: &Address,
+    user: &Address,
+    new_status: &ComplianceStatus,
+) -> Result<ComplianceStatus, Error> {
+    let current = get_compliance_status(env, user);
+    require_transition_authority(env, caller, &current);
+
+    if current == *new_status {
+        return Err(Error::ComplianceStatusUnchanged);
+    }
+    if !transition_is_allowed(&current, new_status) {
+        return Err(Error::InvalidComplianceTransition);
+    }
+
+    Ok(current)
+}
+
+fn batch_has_duplicate_user(updates: &Vec<ComplianceBatchUpdate>, index: u32) -> bool {
+    let current = updates.get(index).unwrap();
+    for previous_index in 0..index {
+        let previous = updates.get(previous_index).unwrap();
+        if previous.user == current.user {
+            return true;
+        }
+    }
+    false
+}
+
 // ─── Enforcement helpers consumed by minting and transfers ────────────────────
 
 /// Asserts that `user` may receive assets (mint or incoming transfer).
@@ -289,7 +327,6 @@ pub fn require_can_send(env: &Env, user: &Address) -> Result<(), Error> {
 
 #[contractimpl]
 impl AegisContract {
-
     /// Returns the compliance lifecycle status for `user`
     /// (`Unknown` when no record exists). Pure read; always available.
     pub fn get_compliance_status(env: Env, user: Address) -> ComplianceStatus {
@@ -340,19 +377,52 @@ impl AegisContract {
         require_not_paused(&env);
         caller.require_auth();
 
-        let current = get_compliance_status(&env, &user);
-        require_transition_authority(&env, &caller, &current);
-
-        if current == new_status {
-            return Err(Error::ComplianceStatusUnchanged);
-        }
-        if !transition_is_allowed(&current, &new_status) {
-            return Err(Error::InvalidComplianceTransition);
-        }
+        let current = validate_transition(&env, &caller, &user, &new_status)?;
 
         apply_transition(&env, &caller, &user, current, new_status);
 
         Ok(())
+    }
+
+    /// Applies many compliance lifecycle updates atomically.
+    ///
+    /// Every entry is validated before any storage write is committed. If any
+    /// entry is unauthorized, duplicated, unchanged, or outside the transition
+    /// matrix, the whole batch is rejected and no address is updated. Duplicate
+    /// users are rejected with `InvalidComplianceTransition` so a batch cannot
+    /// smuggle order-dependent compliance intent.
+    ///
+    /// Empty batches are permitted and return `0`. On success, returns the
+    /// number of applied updates and emits one `compliance_status_changed`
+    /// event per update, in input order.
+    pub fn batch_set_compliance_status(
+        env: Env,
+        caller: Address,
+        updates: Vec<ComplianceBatchUpdate>,
+    ) -> Result<u32, Error> {
+        require_not_paused(&env);
+        caller.require_auth();
+
+        let len = updates.len();
+        let mut previous_statuses = vec![&env];
+
+        for index in 0..len {
+            if batch_has_duplicate_user(&updates, index) {
+                return Err(Error::InvalidComplianceTransition);
+            }
+
+            let update = updates.get(index).unwrap();
+            let previous = validate_transition(&env, &caller, &update.user, &update.new_status)?;
+            previous_statuses.push_back(previous);
+        }
+
+        for index in 0..len {
+            let update = updates.get(index).unwrap();
+            let previous = previous_statuses.get(index).unwrap();
+            apply_transition(&env, &caller, &update.user, previous, update.new_status);
+        }
+
+        Ok(len)
     }
 
     /// Approves `user` for compliance (legacy alias for a transition to
@@ -397,7 +467,6 @@ impl AegisContract {
 
         Ok(())
     }
-
 
     /// Revokes `user`'s compliance clearance (legacy alias for a transition to
     /// [`ComplianceStatus::Revoked`]).

@@ -1,16 +1,11 @@
-
-
-
 #![cfg(test)]
 
-
-
 use super::*;
-use crate::asset::{AssetMintedEvent, TransferEvent, YieldDistributedEvent};
 use crate::admin::{
-    AdminTransferredEvent, AdminTransferInitiatedEvent, ContractPausedEvent,
-    ContractUnpausedEvent, RoleAssignedEvent, RoleRevokedEvent,
+    AdminTransferInitiatedEvent, AdminTransferredEvent, ContractPausedEvent, ContractUnpausedEvent,
+    RoleAssignedEvent, RoleRevokedEvent,
 };
+use crate::asset::{AssetMintedEvent, TransferEvent, YieldDistributedEvent};
 use crate::capabilities::{
     CapabilityStatus, ComplianceCapabilities, ContractCapabilities, EventCapabilities,
     MetadataCapabilities, MintingCapabilities, PauseCapabilities, TransferCapabilities,
@@ -18,17 +13,22 @@ use crate::capabilities::{
 };
 
 use crate::compliance::{
-    ComplianceStatusChangedEvent, UserWhitelistedEvent, WhitelistRevokedEvent,
+    ComplianceBatchUpdate, ComplianceStatus, ComplianceStatusChangedEvent, UserWhitelistedEvent,
+    WhitelistRevokedEvent,
 };
 
-use crate::lifecycle::AssetStatus;
 use crate::eligibility::InvestorEligibility;
+use crate::lifecycle::{AssetStatus, AssetStatusChangedEvent};
 
 use crate::errors::Error;
+
+use crate::restrictions::{code_for_reason, error_for_reason, reason_for_error, RestrictionReason};
+
 use crate::ContractInitializedEvent;
+
 use soroban_sdk::{
     testutils::{Address as _, Events as _},
-    vec, Address, Env, IntoVal, String,
+    vec, Address, Env, IntoVal, String, Symbol,
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1059,8 +1059,7 @@ fn test_initialize_emits_event() {
             (
                 client.address.clone(),
                 ("contract_initialized",).into_val(&env),
-                ContractInitializedEvent { admin }
-                    .into_val(&env),
+                ContractInitializedEvent { admin }.into_val(&env),
             ),
         ]
     );
@@ -1210,8 +1209,7 @@ fn test_pause_emits_event() {
             (
                 client.address.clone(),
                 ("contract_paused",).into_val(&env),
-                ContractPausedEvent { admin }
-                    .into_val(&env),
+                ContractPausedEvent { admin }.into_val(&env),
             ),
         ]
     );
@@ -1233,8 +1231,7 @@ fn test_unpause_emits_event() {
             (
                 client.address.clone(),
                 ("contract_unpaused",).into_val(&env),
-                ContractUnpausedEvent { admin }
-                    .into_val(&env),
+                ContractUnpausedEvent { admin }.into_val(&env),
             ),
         ]
     );
@@ -1324,31 +1321,24 @@ fn test_supply_cap_noop_rejected() {
     assert!(r.is_err());
 }
 
-
 // ─── INVALID INPUT MATRIX TESTS (Audit Readiness) ─────────────────────────────
 // Deterministic matrix covering malformed, boundary, zero, oversized, unauthorised,
 // invalid-state inputs across compliance, role, asset, minting, transfer, and config.
 // Every failure MUST leave contract state unchanged.
 
-
 #[test]
 fn test_supply_cap_negative_rejected() {
-    let (env, client, admin, _user1, _user2) = setup();
+    let (env, client, admin, user1, user2) = setup();
     env.mock_all_auths();
 
-
-    // ── 1. CONFIG / INITIALIZATION ──────────────────────────────────────────
     client.initialize(&admin);
 
-    // Double init (already covered but re-assert in matrix)
-    let r = client.try_initialize(&admin);
-    assert_eq!(r, Err(Ok(Error::AlreadyInitialized)));
+    // ── Pre-state snapshot (baseline) ───────────────────────────────────────
 
-
+    // ── 1. CONFIG / INITIALIZATION ──────────────────────────────────────────
     let r = client.try_propose_supply_cap(&admin, &-1);
     assert!(r.is_err());
 }
-
 
 #[test]
 fn test_supply_cap_lowering_below_supply_blocks_future_mints() {
@@ -1358,7 +1348,6 @@ fn test_supply_cap_lowering_below_supply_blocks_future_mints() {
     client.initialize(&admin);
     client.set_asset_status(&admin, &AssetStatus::Active);
     client.whitelist_user(&admin, &user2);
-
 
     client.mint_asset(&admin, &user2, &1000);
     assert_eq!(client.get_total_supply(), 1000);
@@ -1458,11 +1447,28 @@ fn test_supply_cap_overflow_like_mint_keeps_state_consistent() {
     client.propose_supply_cap(&admin, &i128::MAX);
     client.accept_supply_cap(&admin);
 
-
     // Reach the practical numeric boundary first.
     let r = client.try_mint_asset(&admin, &user2, &i128::MAX);
     assert!(r.is_ok());
     assert_eq!(client.get_balance_of(&user2), i128::MAX);
+
+    // While the contract is globally paused, the pause outranks the asset
+    // lifecycle state — the reported reason must match that precedence.
+
+    // Unpause when not paused (after unpause)
+
+    // Once unpaused, the retired asset yields its own specific reason code
+    // rather than the generic `AssetNotActive` this matrix used to see.
+
+    // Unpause when not paused (after unpause)
+
+    // A retired asset blocks every transfer regardless of compliance state.
+    let r = client.try_mint_asset(&admin, &user2, &1);
+    assert!(r.is_err());
+    assert_eq!(client.get_total_supply(), i128::MAX);
+    assert_eq!(client.get_balance_of(&user2), i128::MAX);
+
+    // ── FINAL STATE VERIFICATION: NO MUTATION ───────────────────────────────
 }
 
 // ─── Contract capability flags (#82) ─────────────────────────────────────────
@@ -1489,7 +1495,8 @@ fn default_capabilities(env: &Env) -> ContractCapabilities {
             module_enabled: true,
             whitelist: CapabilityStatus::Supported,
             whitelist_revocation: CapabilityStatus::Supported,
-            batch_whitelisting: CapabilityStatus::Planned,
+            batch_whitelisting: CapabilityStatus::Supported,
+            batch_status_updates: CapabilityStatus::Supported,
             investor_tiers: CapabilityStatus::Unsupported,
             lifecycle_states: CapabilityStatus::Supported,
             lifecycle_transitions: CapabilityStatus::Supported,
@@ -1514,6 +1521,7 @@ fn default_capabilities(env: &Env) -> ContractCapabilities {
             transfer_from: CapabilityStatus::Planned,
             transfer_fees: CapabilityStatus::Planned,
             transfer_eligibility_check: CapabilityStatus::Supported,
+            transfer_restriction_reasons: CapabilityStatus::Supported,
         },
         pause: PauseCapabilities {
             module_enabled: true,
@@ -1550,32 +1558,6 @@ fn default_capabilities(env: &Env) -> ContractCapabilities {
     }
 }
 
-// Next mint would require i128::MAX + 1 internally (overflow-like path).
-// The call must fail and preserve the pre-call state.
-#[test]
-fn test_mint_overflow_boundary() {
-    let (env, client, admin, _user1, user2) = setup();
-    env.mock_all_auths();
-
-    client.initialize(&admin);
-    client.set_asset_status(&admin, &AssetStatus::Active);
-    client.whitelist_user(&admin, &user2);
-    client.propose_supply_cap(&admin, &i128::MAX);
-    client.accept_supply_cap(&admin);
-
-    // Initial state setup is handled by mock in this specific test branch
-    // to match the original structure, but this needs to return the capabilities
-    // when called in a test context.
-    let _ = default_capabilities(&env);
-    client.mint_asset(&admin, &user2, &i128::MAX);
-    
-    let r = client.try_mint_asset(&admin, &user2, &1);
-
-    assert!(r.is_err());
-    assert_eq!(client.get_total_supply(), i128::MAX);
-    assert_eq!(client.get_balance_of(&user2), i128::MAX);
-}
-
 // ─── Asset lifecycle invariants (#55) ─────────────────────────────────────────
 
 #[test]
@@ -1585,7 +1567,6 @@ fn test_asset_lifecycle_defaults_to_draft() {
 
     client.initialize(&admin);
     assert_eq!(client.get_asset_status(), AssetStatus::Draft);
-
 }
 
 #[test]
@@ -1835,6 +1816,13 @@ fn test_holding_cap_blocks_mint_over_limit() {
     assert!(r.is_ok());
     assert_eq!(client.get_balance_of(&user2), 500);
 
+    // Before initialize — no auth mocked, no admin in storage.
+    assert_eq!(
+        client.supports_capability(&Symbol::new(&env, "whitelist")),
+        CapabilityStatus::Supported
+    );
+    assert_eq!(client.get_capability_keys().len(), 28);
+
     // Mint that would push the holder over the cap is rejected.
     let r = client.try_mint_asset(&user1, &user2, &1);
     assert!(r.is_err());
@@ -1850,6 +1838,13 @@ fn test_holding_cap_blocks_transfer_over_limit() {
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user1);
     client.whitelist_user(&admin, &user2);
+
+    // And while paused.
+    assert_eq!(
+        client.supports_capability(&Symbol::new(&env, "whitelist")),
+        CapabilityStatus::Supported
+    );
+    assert_eq!(client.get_capability_keys().len(), 28);
 
     // Give user1 a balance, then cap user2's holding at 300.
     client.mint_asset(&user1, &user1, &1000);
@@ -1911,7 +1906,7 @@ fn test_eligibility_default_state_is_ineligible() {
         elig,
         InvestorEligibility {
             whitelisted: false,
-            compliance_status: crate::compliance::ComplianceStatus::Unknown,
+            compliance_status: ComplianceStatus::Unknown,
             contract_paused: false,
             asset_status: AssetStatus::Draft,
             balance: 0,
@@ -1939,7 +1934,7 @@ fn test_eligibility_reflects_whitelisted_holder_with_balance() {
         elig,
         InvestorEligibility {
             whitelisted: true,
-            compliance_status: crate::compliance::ComplianceStatus::Approved,
+            compliance_status: ComplianceStatus::Approved,
             contract_paused: false,
             asset_status: AssetStatus::Active,
             balance: 500,
@@ -1951,12 +1946,527 @@ fn test_eligibility_reflects_whitelisted_holder_with_balance() {
     );
 }
 
-#[test]
-fn test_eligibility_reflects_holding_cap_headroom() {
+// ─── Transfer restriction reason codes ───────────────────────────────────────
+//
+// These tests lock down the blocked-transfer reason surface that SDK and
+// dashboard clients render explanations from. They assert three guarantees:
+// every blocking condition resolves to a *specific* reason (never a generic
+// failure), the pre-flight reason always agrees with the error the real
+// state-changing call reverts with, and the reason ⇄ code mapping is total
+// and stable.
+
+/// Initializes a contract with an AssetManager (`user1`), both users
+/// whitelisted, and `user1` funded — the common baseline for restriction
+/// tests, from which each test removes exactly one precondition.
+fn setup_transferable() -> (Env, AegisContractClient<'static>, Address, Address, Address) {
     let (env, client, admin, user1, user2) = setup();
     env.mock_all_auths();
 
     client.initialize(&admin);
+
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&user1, &user1, &1_000);
+
+    (env, client, admin, user1, user2)
+}
+
+/// Asserts that a pre-flight restriction check and the real `transfer` call
+/// agree: the reason returned by the read maps to exactly the error code the
+/// state-changing call reverts with. This is the core contract that lets a
+/// dashboard explain a failure it only observed as `Error(Contract, #code)`.
+fn assert_transfer_blocked_by(
+    client: &AegisContractClient<'static>,
+    from: &Address,
+    to: &Address,
+    amount: &i128,
+    expected_reason: RestrictionReason,
+    expected_error: Error,
+) {
+    let reason = client.check_transfer_restriction(from, to, amount);
+    assert_eq!(reason, expected_reason);
+    assert_eq!(client.get_restriction_code(&reason), expected_error as u32);
+    assert_eq!(
+        client.try_transfer(from, to, amount),
+        Err(Ok(expected_error))
+    );
+}
+
+#[test]
+fn test_unrestricted_transfer_reports_no_reason() {
+    let (_env, client, _admin, user1, user2) = setup_transferable();
+
+    let reason = client.check_transfer_restriction(&user1, &user2, &100);
+    assert_eq!(reason, RestrictionReason::None);
+    // `None` is the only reason with no error code.
+    assert_eq!(client.get_restriction_code(&reason), 0);
+
+    client.transfer(&user1, &user2, &100);
+    assert_eq!(client.get_balance_of(&user2), 100);
+}
+
+#[test]
+fn test_restriction_reason_non_compliant_sender() {
+    let (_env, client, admin, user1, user2) = setup_transferable();
+
+    client.revoke_whitelist(&admin, &user1);
+
+    assert_transfer_blocked_by(
+        &client,
+        &user1,
+        &user2,
+        &100,
+        RestrictionReason::SenderNotCompliant,
+        Error::SenderNotWhitelisted,
+    );
+}
+
+#[test]
+fn test_restriction_reason_non_compliant_recipient() {
+    let (env, client, _admin, user1, _user2) = setup_transferable();
+    let outsider = Address::generate(&env);
+
+    assert_transfer_blocked_by(
+        &client,
+        &user1,
+        &outsider,
+        &100,
+        RestrictionReason::RecipientNotCompliant,
+        Error::ReceiverNotWhitelisted,
+    );
+}
+
+#[test]
+fn test_restriction_reason_sender_checked_before_recipient() {
+    // Both parties non-compliant: the reported reason must be deterministic
+    // and match the on-chain check order, or a dashboard would show a
+    // different explanation than the eventual revert.
+    let (env, client, admin, user1, _user2) = setup_transferable();
+    let outsider = Address::generate(&env);
+    client.revoke_whitelist(&admin, &user1);
+
+    assert_transfer_blocked_by(
+        &client,
+        &user1,
+        &outsider,
+        &100,
+        RestrictionReason::SenderNotCompliant,
+        Error::SenderNotWhitelisted,
+    );
+}
+
+#[test]
+fn test_restriction_reason_paused_asset() {
+    let (_env, client, admin, user1, user2) = setup_transferable();
+
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+
+    assert_transfer_blocked_by(
+        &client,
+        &user1,
+        &user2,
+        &100,
+        RestrictionReason::AssetPaused,
+        Error::AssetPausedRestriction,
+    );
+
+    // A paused asset is a *temporary* restriction — clients may offer retry.
+    assert!(!client
+        .check_transfer_restriction(&user1, &user2, &100)
+        .is_terminal());
+
+    // ...and the restriction lifts when the asset returns to Active.
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    assert_eq!(
+        client.check_transfer_restriction(&user1, &user2, &100),
+        RestrictionReason::None
+    );
+    client.transfer(&user1, &user2, &100);
+}
+
+#[test]
+fn test_restriction_reason_retired_asset() {
+    let (_env, client, admin, user1, user2) = setup_transferable();
+
+    client.set_asset_status(&admin, &AssetStatus::Retired);
+
+    assert_transfer_blocked_by(
+        &client,
+        &user1,
+        &user2,
+        &100,
+        RestrictionReason::AssetRetired,
+        Error::AssetRetiredRestriction,
+    );
+
+    // Retirement is terminal: no later ledger state can unblock it.
+    assert!(client
+        .check_transfer_restriction(&user1, &user2, &100)
+        .is_terminal());
+    assert_eq!(
+        client.try_set_asset_status(&admin, &AssetStatus::Active),
+        Err(Ok(Error::InvalidAssetStatusTransition))
+    );
+}
+
+#[test]
+fn test_restriction_reason_blocked_asset_is_distinct_from_paused_and_retired() {
+    let (_env, client, admin, user1, user2) = setup_transferable();
+
+    client.set_asset_status(&admin, &AssetStatus::Blocked);
+
+    assert_transfer_blocked_by(
+        &client,
+        &user1,
+        &user2,
+        &100,
+        RestrictionReason::AssetBlocked,
+        Error::AssetBlockedRestriction,
+    );
+
+    // The three asset-state restrictions must not collapse into one code —
+    // that collapse (the old generic `AssetNotActive`) is the bug this fixes.
+    assert_ne!(
+        Error::AssetBlockedRestriction as u32,
+        Error::AssetPausedRestriction as u32
+    );
+    assert_ne!(
+        Error::AssetBlockedRestriction as u32,
+        Error::AssetRetiredRestriction as u32
+    );
+    assert_ne!(
+        Error::AssetPausedRestriction as u32,
+        Error::AssetRetiredRestriction as u32
+    );
+}
+
+#[test]
+fn test_restriction_reason_contract_pause_outranks_asset_state() {
+    let (_env, client, admin, user1, user2) = setup_transferable();
+
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+    client.pause(&admin);
+
+    // The global emergency pause is evaluated first, so it — not the asset
+    // status — is the reason reported, matching the revert.
+    assert_transfer_blocked_by(
+        &client,
+        &user1,
+        &user2,
+        &100,
+        RestrictionReason::ContractPaused,
+        Error::ContractPaused,
+    );
+}
+
+#[test]
+fn test_restriction_reason_unauthorised_operation_on_mint() {
+    let (_env, client, _admin, _user1, user2) = setup_transferable();
+
+    // `user2` is whitelisted but holds no AssetManager role.
+    let reason = client.check_mint_restriction(&user2, &user2, &100);
+    assert_eq!(reason, RestrictionReason::UnauthorizedOperation);
+    assert_eq!(
+        client.get_restriction_code(&reason),
+        Error::Unauthorized as u32
+    );
+    assert_eq!(
+        client.try_mint_asset(&user2, &user2, &100),
+        Err(Ok(Error::Unauthorized))
+    );
+
+    // An authorised caller reports no restriction for the same movement.
+    assert_eq!(
+        client.check_mint_restriction(&_user1, &user2, &100),
+        RestrictionReason::None
+    );
+}
+
+#[test]
+fn test_restriction_reason_invalid_amount_and_insufficient_balance() {
+    let (_env, client, _admin, user1, user2) = setup_transferable();
+
+    assert_transfer_blocked_by(
+        &client,
+        &user1,
+        &user2,
+        &0,
+        RestrictionReason::InvalidAmount,
+        Error::InvalidAmount,
+    );
+    assert_transfer_blocked_by(
+        &client,
+        &user1,
+        &user2,
+        &-5,
+        RestrictionReason::InvalidAmount,
+        Error::InvalidAmount,
+    );
+    assert_transfer_blocked_by(
+        &client,
+        &user1,
+        &user2,
+        &100_000,
+        RestrictionReason::InsufficientBalance,
+        Error::InsufficientBalance,
+    );
+}
+
+#[test]
+fn test_restriction_reason_holding_cap_exceeded_on_transfer() {
+    let (_env, client, admin, user1, user2) = setup_transferable();
+
+    client.propose_holding_cap(&admin, &50);
+    client.accept_holding_cap(&admin);
+
+    // Previously a bare host panic with a string message; now a typed code.
+    assert_transfer_blocked_by(
+        &client,
+        &user1,
+        &user2,
+        &100,
+        RestrictionReason::HoldingCapExceeded,
+        Error::HoldingCapExceeded,
+    );
+
+    // Within the cap, the same transfer is unrestricted.
+    assert_eq!(
+        client.check_transfer_restriction(&user1, &user2, &50),
+        RestrictionReason::None
+    );
+    client.transfer(&user1, &user2, &50);
+}
+
+#[test]
+fn test_restriction_reason_supply_cap_exceeded_on_mint() {
+    let (_env, client, admin, user1, user2) = setup_transferable();
+
+    // Total supply is already 1_000 from the baseline mint.
+    client.propose_supply_cap(&admin, &1_100);
+    client.accept_supply_cap(&admin);
+
+    let reason = client.check_mint_restriction(&user1, &user2, &500);
+    assert_eq!(reason, RestrictionReason::SupplyCapExceeded);
+    assert_eq!(
+        client.get_restriction_code(&reason),
+        Error::SupplyCapExceeded as u32
+    );
+    assert_eq!(
+        client.try_mint_asset(&user1, &user2, &500),
+        Err(Ok(Error::SupplyCapExceeded))
+    );
+
+    assert_eq!(
+        client.check_mint_restriction(&user1, &user2, &100),
+        RestrictionReason::None
+    );
+    client.mint_asset(&user1, &user2, &100);
+}
+
+#[test]
+fn test_restriction_reasons_on_mint_cover_compliance_and_asset_state() {
+    let (env, client, admin, user1, user2) = setup_transferable();
+    let outsider = Address::generate(&env);
+
+    assert_eq!(
+        client.check_mint_restriction(&user1, &outsider, &100),
+        RestrictionReason::RecipientNotCompliant
+    );
+    assert_eq!(
+        client.try_mint_asset(&user1, &outsider, &100),
+        Err(Ok(Error::ReceiverNotWhitelisted))
+    );
+
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+    assert_eq!(
+        client.check_mint_restriction(&user1, &user2, &100),
+        RestrictionReason::AssetPaused
+    );
+    assert_eq!(
+        client.try_mint_asset(&user1, &user2, &100),
+        Err(Ok(Error::AssetPausedRestriction))
+    );
+
+    client.set_asset_status(&admin, &AssetStatus::Retired);
+    assert_eq!(
+        client.check_mint_restriction(&user1, &user2, &100),
+        RestrictionReason::AssetRetired
+    );
+    assert_eq!(
+        client.try_mint_asset(&user1, &user2, &100),
+        Err(Ok(Error::AssetRetiredRestriction))
+    );
+}
+
+#[test]
+fn test_restriction_reason_code_mapping_is_total_and_round_trips() {
+    let (_env, client, _admin, _user1, _user2) = setup();
+
+    // Every reason a client can be handed must have a defined code, and every
+    // blocking code must map back to the reason it came from. A gap here means
+    // an SDK would fall through to a generic "transaction failed".
+    let reasons = [
+        (RestrictionReason::None, 0u32),
+        (RestrictionReason::UnauthorizedOperation, 3000),
+        (RestrictionReason::ContractPaused, 3004),
+        (RestrictionReason::SenderNotCompliant, 4000),
+        (RestrictionReason::RecipientNotCompliant, 4001),
+        (RestrictionReason::InvalidAmount, 5000),
+        (RestrictionReason::InsufficientBalance, 5001),
+        (RestrictionReason::AssetPaused, 7000),
+        (RestrictionReason::AssetRetired, 7001),
+        (RestrictionReason::AssetBlocked, 7002),
+        (RestrictionReason::HoldingCapExceeded, 7003),
+        (RestrictionReason::SupplyCapExceeded, 7004),
+    ];
+
+    for (reason, expected_code) in reasons.iter() {
+        // Codes agree between the pure helper and the on-chain entrypoint.
+        assert_eq!(code_for_reason(reason), *expected_code);
+        assert_eq!(client.get_restriction_code(reason), *expected_code);
+
+        match error_for_reason(reason) {
+            Some(err) => {
+                assert!(reason.is_blocked());
+                assert_eq!(err as u32, *expected_code);
+                // Round-trip: code → error → reason recovers the original.
+                assert_eq!(reason_for_error(&err), Some(*reason));
+            }
+            None => {
+                assert_eq!(*reason, RestrictionReason::None);
+                assert!(!reason.is_blocked());
+            }
+        }
+    }
+
+    // Non-restriction errors must NOT be rendered as blocked-transfer reasons.
+    assert_eq!(reason_for_error(&Error::AlreadyInitialized), None);
+    assert_eq!(reason_for_error(&Error::NotInitialized), None);
+    assert_eq!(reason_for_error(&Error::InvalidAssetStatusTransition), None);
+}
+
+#[test]
+fn test_restriction_checks_are_pure_reads_and_survive_paused_state() {
+    let (_env, client, admin, user1, user2) = setup_transferable();
+
+    let supply_before = client.get_total_supply();
+    let balance_before = client.get_balance_of(&user1);
+
+    client.pause(&admin);
+
+    // Read helpers stay callable while paused and never mutate state.
+    assert_eq!(
+        client.check_transfer_restriction(&user1, &user2, &100),
+        RestrictionReason::ContractPaused
+    );
+    assert_eq!(
+        client.check_mint_restriction(&user1, &user2, &100),
+        RestrictionReason::ContractPaused
+    );
+    assert_eq!(client.get_restriction_schema_version(), 1);
+
+    assert_eq!(client.get_total_supply(), supply_before);
+    assert_eq!(client.get_balance_of(&user1), balance_before);
+    assert_eq!(client.get_balance_of(&user2), 0);
+}
+
+#[test]
+fn test_restriction_checks_never_panic_on_uninitialized_contract() {
+    let (env, client, _admin, user1, user2) = setup();
+
+    // No `initialize`, no admin in storage: the reads must fail safe with a
+    // reason rather than trapping, so a dashboard can render an explanation
+    // against a fresh or misconfigured deployment.
+    assert_eq!(
+        client.check_transfer_restriction(&user1, &user2, &100),
+        RestrictionReason::SenderNotCompliant
+    );
+    assert_eq!(
+        client.check_mint_restriction(&user1, &user2, &100),
+        RestrictionReason::UnauthorizedOperation
+    );
+    let _ = env;
+}
+
+#[test]
+fn test_blocked_transfers_leave_no_state_change_and_emit_no_event() {
+    let (env, client, admin, user1, user2) = setup_transferable();
+
+    client.set_asset_status(&admin, &AssetStatus::Blocked);
+
+    let supply_before = client.get_total_supply();
+    let from_before = client.get_balance_of(&user1);
+    let to_before = client.get_balance_of(&user2);
+    let events_before = env.events().all();
+
+    assert_eq!(
+        client.try_transfer(&user1, &user2, &100),
+        Err(Ok(Error::AssetBlockedRestriction))
+    );
+
+    assert_eq!(client.get_total_supply(), supply_before);
+    assert_eq!(client.get_balance_of(&user1), from_before);
+    assert_eq!(client.get_balance_of(&user2), to_before);
+    // Soroban discards events from reverted invocations — the error code is
+    // the only off-chain signal, which is exactly why it must be specific.
+    assert_eq!(env.events().all(), events_before);
+}
+
+#[test]
+fn test_restriction_reason_agrees_with_check_transfer_eligibility() {
+    let (env, client, admin, user1, user2) = setup_transferable();
+    let outsider = Address::generate(&env);
+
+    // The boolean helper and the reason helper must never disagree: the
+    // reason is the strictly more informative form of the same verdict.
+    let cases: [(Address, Address, i128); 5] = [
+        (user1.clone(), user2.clone(), 100),
+        (user1.clone(), outsider.clone(), 100),
+        (outsider.clone(), user2.clone(), 100),
+        (user1.clone(), user2.clone(), 0),
+        (user1.clone(), user2.clone(), 100_000),
+    ];
+    for (from, to, amount) in cases.iter() {
+        let eligible = client.check_transfer_eligibility(from, to, amount);
+        let reason = client.check_transfer_restriction(from, to, amount);
+        assert_eq!(eligible, !reason.is_blocked());
+    }
+
+    // ...including under a lifecycle restriction.
+    client.set_asset_status(&admin, &AssetStatus::Retired);
+    assert!(!client.check_transfer_eligibility(&user1, &user2, &100));
+    assert!(client
+        .check_transfer_restriction(&user1, &user2, &100)
+        .is_blocked());
+}
+
+#[test]
+fn test_investor_eligibility_snapshot_agrees_with_restriction_reasons() {
+    let (_env, client, admin, user1, user2) = setup_transferable();
+
+    // The aggregated investor snapshot and the per-movement reason must tell
+    // the same story, so a dashboard cannot show "eligible" next to a
+    // blocked-transfer explanation.
+    let snapshot: InvestorEligibility = client.get_investor_eligibility(&user1);
+    assert!(snapshot.whitelisted);
+    assert!(snapshot.can_send);
+    assert!(!snapshot.contract_paused);
+    assert_eq!(
+        client.check_transfer_restriction(&user1, &user2, &100),
+        RestrictionReason::None
+    );
+
+    // Revoking compliance must flip both views together.
+    client.revoke_whitelist(&admin, &user1);
+    let snapshot = client.get_investor_eligibility(&user1);
+    assert!(!snapshot.whitelisted);
+    assert!(!snapshot.can_send);
+    assert_eq!(
+        client.check_transfer_restriction(&user1, &user2, &100),
+        RestrictionReason::SenderNotCompliant
+    );
+
     client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user2);
@@ -2029,7 +2539,6 @@ fn test_check_transfer_eligibility_false_when_invalid_amount() {
     let (env, client, admin, user1, user2) = setup();
     env.mock_all_auths();
 
-
     // Before initialize — no auth mocked, no admin in storage.
     assert_eq!(
         client.supports_capability(&soroban_sdk::Symbol::new(&env, "whitelist")),
@@ -2073,7 +2582,6 @@ fn test_check_transfer_eligibility_false_when_receiver_not_whitelisted() {
 fn test_check_transfer_eligibility_false_when_insufficient_balance() {
     let (env, client, admin, user1, user2) = setup();
     env.mock_all_auths();
-
 
     client.initialize(&admin);
     client.set_asset_status(&admin, &AssetStatus::Active);
@@ -2120,7 +2628,6 @@ fn test_check_transfer_eligibility_false_when_contract_paused() {
     client.mint_asset(&user1, &user1, &1000);
 
     client.pause(&admin);
-
 
     // And while paused.
     assert_eq!(
@@ -2171,7 +2678,6 @@ fn test_supply_cap_exceeded_returns_standardized_error() {
     // Any mint beyond cap must return the standardized error code.
     let r = client.try_mint_asset(&admin, &user2, &1);
     assert_eq!(r, Err(Ok(Error::SupplyCapExceeded)));
-
 }
 
 #[test]
@@ -2242,7 +2748,6 @@ fn test_supply_cap_proposed_and_amended_emit_events() {
     );
 }
 
-
 // ─── COMPLIANCE STATUS TRANSITION INVARIANTS (Audit Readiness) ────────────────
 //
 // Deterministic invariant coverage for compliance status transitions. The
@@ -2272,7 +2777,7 @@ fn test_supply_cap_proposed_and_amended_emit_events() {
 
 /// The compliance statuses an investor address can be in.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum ComplianceStatus {
+enum LegacyComplianceStatus {
     /// No record: the address has never been targeted by a compliance call.
     Unknown,
     /// Awaiting approval: an earlier approval attempt was rejected (wrong
@@ -2284,17 +2789,17 @@ enum ComplianceStatus {
     Revoked,
 }
 
-impl ComplianceStatus {
-    const ALL: [ComplianceStatus; 4] = [
-        ComplianceStatus::Unknown,
-        ComplianceStatus::Pending,
-        ComplianceStatus::Approved,
-        ComplianceStatus::Revoked,
+impl LegacyComplianceStatus {
+    const ALL: [LegacyComplianceStatus; 4] = [
+        LegacyComplianceStatus::Unknown,
+        LegacyComplianceStatus::Pending,
+        LegacyComplianceStatus::Approved,
+        LegacyComplianceStatus::Revoked,
     ];
 
     /// The whitelist flag observable on-chain for an address in this status.
     fn is_approved(self) -> bool {
-        matches!(self, ComplianceStatus::Approved)
+        matches!(self, LegacyComplianceStatus::Approved)
     }
 }
 
@@ -2425,17 +2930,17 @@ impl ComplianceFixture {
 
     /// Drives `target` into `status` using committed transitions — plus, for
     /// `Pending`, one rejected approval attempt by an unauthorised caller.
-    fn drive_to_status(&self, status: ComplianceStatus) {
+    fn drive_to_status(&self, status: LegacyComplianceStatus) {
         match status {
-            ComplianceStatus::Unknown => {}
-            ComplianceStatus::Pending => {
+            LegacyComplianceStatus::Unknown => {}
+            LegacyComplianceStatus::Pending => {
                 let outcome = self.attempt(ComplianceAction::Approve, TransitionCaller::NoRole);
                 assert_eq!(outcome, TransitionOutcome::Rejected(Error::Unauthorized));
             }
-            ComplianceStatus::Approved => {
+            LegacyComplianceStatus::Approved => {
                 self.client.whitelist_user(&self.officer, &self.target);
             }
-            ComplianceStatus::Revoked => {
+            LegacyComplianceStatus::Revoked => {
                 self.client.whitelist_user(&self.officer, &self.target);
                 self.client.revoke_whitelist(&self.officer, &self.target);
             }
@@ -2475,7 +2980,7 @@ fn test_compliance_transition_matrix_deterministic() {
     // Unauthorised callers: every transition is rejected with `Unauthorized`
     // and the address status is left exactly as it was — invalid transitions
     // cannot create a bypass.
-    for status in ComplianceStatus::ALL {
+    for status in LegacyComplianceStatus::ALL {
         for action in ComplianceAction::ALL {
             for caller in TransitionCaller::ALL {
                 let fixture = ComplianceFixture::new();
@@ -2520,7 +3025,7 @@ fn test_compliance_transitions_blocked_when_paused() {
     // No event escapes a blocked transition and the address status is left
     // unchanged. After unpause, authorised transitions work again, so the
     // blocked overlay never becomes a permanent lockout.
-    for status in ComplianceStatus::ALL {
+    for status in LegacyComplianceStatus::ALL {
         for action in ComplianceAction::ALL {
             for caller in TransitionCaller::ALL {
                 let fixture = ComplianceFixture::new();
@@ -2828,17 +3333,13 @@ fn test_holding_cap_proposed_and_amended_emit_events() {
     );
 }
 
-mod new_compliance_tests {
-    use super::*;
-    use crate::compliance::ComplianceStatus;
-    use soroban_sdk::Symbol;
-
-// ─── Compliance lifecycle state machine (#compliance-lifecycle) ──────────────
-//
-// These tests lock down the five-state investor compliance lifecycle: the
-// default state, every allowed transition, every rejected transition, the
-// authorization asymmetry around `Blocked`, the events emitted on change, and
-// the fact that minting and transfers actually consume the lifecycle state.
+    // ─── Compliance lifecycle state machine (#compliance-lifecycle) ──────────────
+    //
+    // These tests lock down the five-state investor compliance lifecycle: the
+    // default state, every allowed transition, every rejected transition, the
+    // authorization asymmetry around `Blocked`, the events emitted on change, and
+    // the fact that minting and transfers actually consume the lifecycle state.
+}
 
 /// Every lifecycle state, in ABI order.
 const ALL_STATUSES: [ComplianceStatus; 5] = [
@@ -3014,6 +3515,152 @@ fn test_full_happy_path_lifecycle_walk() {
     assert_eq!(
         client.get_compliance_status(&user1),
         ComplianceStatus::Pending
+    );
+}
+
+#[test]
+fn test_batch_set_compliance_status_updates_many_addresses_atomically() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    let updates = vec![
+        &env,
+        ComplianceBatchUpdate {
+            user: user1.clone(),
+            new_status: ComplianceStatus::Pending,
+        },
+        ComplianceBatchUpdate {
+            user: user2.clone(),
+            new_status: ComplianceStatus::Approved,
+        },
+    ];
+
+    let applied = client.batch_set_compliance_status(&admin, &updates);
+
+    assert_eq!(applied, 2);
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Pending
+    );
+    assert_eq!(
+        client.get_compliance_status(&user2),
+        ComplianceStatus::Approved
+    );
+    assert!(!client.is_whitelisted(&user1));
+    assert!(client.is_whitelisted(&user2));
+}
+
+#[test]
+fn test_batch_set_compliance_status_rejects_invalid_entry_without_partial_write() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_compliance_status(&admin, &user1, &ComplianceStatus::Pending);
+
+    let updates = vec![
+        &env,
+        ComplianceBatchUpdate {
+            user: user1.clone(),
+            new_status: ComplianceStatus::Approved,
+        },
+        ComplianceBatchUpdate {
+            user: user2.clone(),
+            new_status: ComplianceStatus::Revoked,
+        },
+    ];
+
+    let result = client.try_batch_set_compliance_status(&admin, &updates);
+
+    assert_eq!(result, Err(Ok(Error::InvalidComplianceTransition)));
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Pending
+    );
+    assert_eq!(
+        client.get_compliance_status(&user2),
+        ComplianceStatus::Unknown
+    );
+    assert_eq!(env.events().all().events().len(), 0);
+}
+
+#[test]
+fn test_batch_set_compliance_status_rejects_duplicates_and_no_ops() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Pending);
+
+    let duplicate_updates = vec![
+        &env,
+        ComplianceBatchUpdate {
+            user: user1.clone(),
+            new_status: ComplianceStatus::Pending,
+        },
+        ComplianceBatchUpdate {
+            user: user1.clone(),
+            new_status: ComplianceStatus::Approved,
+        },
+    ];
+    assert_eq!(
+        client.try_batch_set_compliance_status(&admin, &duplicate_updates),
+        Err(Ok(Error::InvalidComplianceTransition))
+    );
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Unknown
+    );
+
+    let no_op_updates = vec![
+        &env,
+        ComplianceBatchUpdate {
+            user: user1.clone(),
+            new_status: ComplianceStatus::Approved,
+        },
+        ComplianceBatchUpdate {
+            user: user2.clone(),
+            new_status: ComplianceStatus::Pending,
+        },
+    ];
+    assert_eq!(
+        client.try_batch_set_compliance_status(&admin, &no_op_updates),
+        Err(Ok(Error::ComplianceStatusUnchanged))
+    );
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Unknown
+    );
+    assert_eq!(
+        client.get_compliance_status(&user2),
+        ComplianceStatus::Pending
+    );
+}
+
+#[test]
+fn test_batch_set_compliance_status_handles_empty_and_paused_batches() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    let empty = vec![&env];
+    assert_eq!(client.batch_set_compliance_status(&admin, &empty), 0);
+
+    let updates = vec![
+        &env,
+        ComplianceBatchUpdate {
+            user: user1.clone(),
+            new_status: ComplianceStatus::Approved,
+        },
+    ];
+    client.pause(&admin);
+
+    assert_eq!(
+        client.try_batch_set_compliance_status(&admin, &updates),
+        Err(Ok(Error::ContractPaused))
+    );
+    assert_eq!(
+        client.get_compliance_status(&user1),
+        ComplianceStatus::Unknown
     );
 }
 
@@ -3589,6 +4236,14 @@ fn test_capabilities_advertise_the_compliance_lifecycle() {
         CapabilityStatus::Supported
     );
     assert_eq!(
+        caps.compliance.batch_whitelisting,
+        CapabilityStatus::Supported
+    );
+    assert_eq!(
+        caps.compliance.batch_status_updates,
+        CapabilityStatus::Supported
+    );
+    assert_eq!(
         caps.events.compliance_lifecycle_events,
         CapabilityStatus::Supported
     );
@@ -3602,6 +4257,14 @@ fn test_capabilities_advertise_the_compliance_lifecycle() {
         CapabilityStatus::Supported
     );
     assert_eq!(
+        client.supports_capability(&Symbol::new(&env, "batch_whitelisting")),
+        CapabilityStatus::Supported
+    );
+    assert_eq!(
+        client.supports_capability(&Symbol::new(&env, "compliance_batch_updates")),
+        CapabilityStatus::Supported
+    );
+    assert_eq!(
         client.supports_capability(&Symbol::new(&env, "compliance_lifecycle_events")),
         CapabilityStatus::Supported
     );
@@ -3610,6 +4273,7 @@ fn test_capabilities_advertise_the_compliance_lifecycle() {
     let keys = client.get_capability_keys();
     assert!(keys.contains(Symbol::new(&env, "compliance_lifecycle")));
     assert!(keys.contains(Symbol::new(&env, "compliance_transitions")));
+    assert!(keys.contains(Symbol::new(&env, "compliance_batch_updates")));
     assert!(keys.contains(Symbol::new(&env, "compliance_lifecycle_events")));
 }
 
@@ -3638,7 +4302,6 @@ fn test_lifecycle_reads_never_revert_and_never_mutate() {
         client.get_compliance_status(&user1),
         ComplianceStatus::Unknown
     );
-
 }
 
 #[test]
@@ -3749,6 +4412,5 @@ fn test_compliance_transitions_rejected_after_officer_role_revoked() {
         .client
         .revoke_whitelist(&fixture.admin, &fixture.target);
     assert!(!fixture.is_target_approved());
-
 }
 }

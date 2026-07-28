@@ -1,10 +1,8 @@
-
 // The legacy `Events::publish((topic,), payload)` API is used intentionally:
 // docs/events.md freezes these (topic, payload) shapes as a stable off-chain
 // contract, and src/test.rs asserts them exactly. Migrating to the
 // `#[contractevent]` macro must preserve every emitted shape byte-for-byte.
-use soroban_sdk::{contractimpl, contracttype, panic_with_error, Address, Env};
-
+use soroban_sdk::{contractimpl, contracttype, Address, Env};
 
 use crate::admin::{get_admin, require_not_paused};
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error};
@@ -48,37 +46,28 @@ pub fn get_pending_supply_cap(env: &Env) -> Option<i128> {
 
 /// Enforces the active supply cap before a mint of `mint_amount`.
 ///
-/// Reverts if a cap is set (`> 0`) and the resulting total supply would
-/// exceed it. A cap of `0` is treated as "unbounded" and never blocks.
+/// Returns `Err(Error::SupplyCapExceeded)` (code 7004) if a cap is set (`> 0`)
+/// and the resulting total supply would exceed it. A cap of `0` is treated as "unbounded" and never blocks.
 ///
 /// Note: this only constrains *future* minting. If the cap is later lowered
 /// below the current total supply, existing supply is not burned; mints that
 /// would push supply above the new cap simply fail until supply falls (via
 /// burns/transfers out) or the cap is raised.
-pub fn enforce_supply_cap(env: &Env, mint_amount: i128) {
+pub fn enforce_supply_cap(env: &Env, mint_amount: i128) -> Result<(), Error> {
     let cap = get_supply_cap(env);
     if cap <= 0 {
-        return;
+        return Ok(());
     }
     let supply: i128 = env
         .storage()
         .instance()
         .get(&DataKey::TotalSupply)
         .unwrap_or(0);
-    // Overflow-safe check: if supply already exceeds cap, any positive mint fails.
-    if supply > cap {
-        panic_with_error!(env, Error::SupplyCapExceeded);
+
+    if supply + mint_amount > cap {
+        return Err(Error::SupplyCapExceeded);
     }
-    let new_supply = match supply.checked_add(mint_amount) {
-        Some(val) => val,
-        None => {
-            // Addition overflow implies it exceeds any valid cap.
-            panic_with_error!(env, Error::SupplyCapExceeded);
-        }
-    };
-    if new_supply > cap {
-        panic_with_error!(env, Error::SupplyCapExceeded);
-    }
+    Ok(())
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────

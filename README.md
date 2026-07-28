@@ -52,10 +52,16 @@ value-encoding rules, and the no-real-user-data guarantee.
 - [Compliance Status Transitions](docs/compliance-status-transitions.md) — the approved/revoked/blocked/pending/unknown state machine, its transition matrix under authorised and unauthorised callers, and the invariant transition tests that guard it (audit readiness)
 
 
+- [Compliance Batch Updates](docs/compliance-batch-updates.md) - atomic multi-address lifecycle updates, edge cases, event ordering, and SDK/dashboard guidance
+
 ## Errors
 
 - [Contract Error Code Standard](docs/error-codes.md) — standardized error codes for compliance, admin, minting, transfer, and storage failures, plus SDK/dashboard mapping guidance
+
+- [Transfer Restriction Reason Codes](docs/transfer-restrictions.md) — granular blocked-transfer reasons (non-compliant sender/recipient, paused/retired/blocked asset, cap breaches, unauthorised operation), pre-flight reason reads, and the SDK/dashboard mapping contract
+
 - [SDK Integration Fixtures](docs/sdk-fixtures.md) — deterministic example outputs for compliance, minting, transfer, event, error, and capability scenarios, for cross-repo testing
+
 
 - [Investor Holding Restriction Checks](docs/investor-holding-restrictions.md) — per-investor holding cap workflow and enforcement
 
@@ -66,7 +72,7 @@ value-encoding rules, and the no-real-user-data guarantee.
 - [Dashboard Integration Readiness Review](docs/dashboard-readiness-review.md) — API gaps, event limitations, and SEP-41 token compatibility risks for front-end integrations
 - [Dashboard Release Readiness Review (MVP)](docs/dashboard-release-readiness.md) — UI/UX gaps, test coverage requirements, and security flow risks for the dashboard application
 
-- [Requirement Traceability Mapping](docs/traceability-mapping.md) — mandatory traceability table format for contract changes and PRs
+- [Requirement Traceability Mapping](docs/traceability-mapping.md) — mandatory completion table format for PR acceptance criteria mapping, with status tracking and incomplete criteria handling
 - [Compliance Registry Reads and Indexing Strategy](docs/compliance-registry-reads.md) — supported point reads, event-indexed pagination, consistency guarantees, and dashboard/SDK boundaries
 - [Dashboard Integration Readiness Review](docs/dashboard-readiness-review.md) — API gaps, event limitations, and SEP-41 token compatibility risks for front-end integrations
 - [Dashboard Release Readiness Review (MVP)](docs/dashboard-release-readiness.md) — UI/UX gaps, test coverage requirements, and security flow risks for the dashboard application
@@ -74,16 +80,22 @@ value-encoding rules, and the no-real-user-data guarantee.
 
 ## Contributor Guides
 
+- [Contributor Evaluation Policy](docs/contributor-evaluation-policy.md) — **formal policy** covering evaluation expectations, self-review, maintainer review standards, GrantFox evaluation, testing/CI, acceptance criteria completion, and payment-period conduct
+- [Contributor Self-Review Form](docs/contributor-self-review-form.md) — **mandatory self-review** covering requirements, implementation, tests, CI, documentation, and known limitations
 - [Local Deployment Guide](docs/local-deployment.md) — deployment assumptions, environment variables, Makefile reference, Soroban CLI usage, and common errors
 - [Reviewer Checklist](docs/reviewer-checklist.md) — standardized quality and security checklist for PR reviewers
 - [Contributor Experience Review](docs/contributor-experience-review.md) — known onboarding friction and follow-up items
 
 ## CI & Contributing
 
+- [Evaluation Readiness Summary](docs/evaluation-readiness.md) — **central page** summarizing what makes a contribution evaluation-ready: testing standards, CI workflow, PR evidence, acceptance criteria mapping, self-review, and conduct guidance
+- [PR Evidence Checklist](docs/pr-evidence-checklist.md) — **mandatory** evidence checklist for every PR: issue reference, implementation summary, tests, commands run, CI status, and acceptance criteria coverage
 - [Local Verification Command](docs/local-verification.md) — run `make verify` (fmt-check + clippy + test + build) before pushing to avoid failing CI
 - [Failing CI Response Guide](docs/failing-ci-guide.md) — how to reproduce and fix Rust, Soroban, Makefile, dependency, and workflow failures (failing checks can block approval)
 - [Payment-Period Conduct Note](docs/payment-period-conduct.md) — contributor expectations during paid periods: no spam, self-review, GrantFox evaluation, CI/testing
 - [Meaningful Implementation Checklist](docs/meaningful-implementation-checklist.md) — what counts as real contract work: behaviour, security, tests, events, acceptance criteria + reviewer checks
+- [Aegis Contracts Contribution Examples](docs/aegis-contracts-examples.md) — side-by-side comparisons of low-effort, partial, under-tested, failing-CI, and acceptable contributions (reference before opening a PR)
+- [Minimum Testing Standards](docs/testing-standards.md) — **mandatory** testing requirements per module, happy-path and negative-path expectations, integration fixtures, manual verification guidance, and no-test justification policy
 
 
 ## Contributing

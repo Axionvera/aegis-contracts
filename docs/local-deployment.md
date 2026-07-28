@@ -591,11 +591,22 @@ category; the full standard is in [error-codes.md](error-codes.md).
 | 4001 | `ReceiverNotWhitelisted` | Whitelist the receiver. The most common mint failure — recipients must be whitelisted **before** minting. |
 | 5000 | `InvalidAmount` | Amount must be strictly greater than zero. |
 | 5001 | `InsufficientBalance` | Sender balance is too low. |
-| 6000 | `AssetNotActive` | Asset status is not `Active`. Restore with `set_asset_status --caller <A> --new_status Active`. |
+| 6000 | `AssetNotActive` | **Reserved** — superseded by `7000`–`7002`; no longer emitted by `transfer`/`mint_asset`. |
 | 6001 | `InvalidAssetStatusTransition` | Lifecycle rules reject the transition. `Retired` is terminal; a status cannot transition to itself. |
 | 6002 | `AssetMetadataUpdateBlocked` | Metadata is frozen in `Retired`/`Blocked` status. |
+| 7000 | `AssetPausedRestriction` | Asset status is `Paused`. Resume with `set_asset_status --caller <A> --new_status Active`. |
+| 7001 | `AssetRetiredRestriction` | Asset status is `Retired` — terminal. No transfer or mint will ever succeed again. |
+| 7002 | `AssetBlockedRestriction` | Asset status is `Blocked`. Clear with `set_asset_status --caller <A> --new_status Active`. |
+| 7003 | `HoldingCapExceeded` | Recipient would exceed the per-investor holding cap. Raise it via `propose_holding_cap` + `accept_holding_cap`, or send less. |
+| 7004 | `SupplyCapExceeded` | Mint would exceed the global supply cap. Raise it via `propose_supply_cap` + `accept_supply_cap`, or mint less. |
 
-Some governance paths use `panic!`/`assert!` instead of typed errors and
+Codes `7000`–`7004` are transfer restriction reasons; run
+`check_transfer_restriction` / `check_mint_restriction` to get the same reason
+*before* submitting. See [Transfer Restriction Reason Codes](transfer-restrictions.md).
+
+The holding-cap and supply-cap paths that previously surfaced as untyped host
+panics now return `7003` / `7004`. Some *governance* paths still use
+`panic!`/`assert!` instead of typed errors and
 surface as host panics with a readable message, for example
 `Proposed cap equals the active cap — no change requested` or
 `No pending supply cap proposal to accept`. These come from the supply-cap and

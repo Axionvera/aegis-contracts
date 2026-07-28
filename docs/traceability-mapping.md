@@ -2,9 +2,42 @@
 
 To ensure high-quality engineering and evaluation readiness, all contract changes must be mapped to their respective acceptance criteria. This documentation defines the standard traceability table format required for all Pull Requests (PRs).
 
-## Traceability Table Format
+## Completion Table Format
 
-Every non-trivial PR must include a traceability table in its description. This table maps how each requirement (Acceptance Criteria) from the related issue is satisfied within the codebase.
+Every PR must include a completion table in its description mapping each acceptance criterion to its status and evidence. This table helps contributors self-evaluate before payment day and makes review expectations clear.
+
+### Table Structure
+
+| Acceptance Criterion | Status | Implementation Evidence | Test Evidence |
+| :--- | :---: | :--- | :--- |
+| **AC 1**: Brief description | Complete | `fn name()` — link to line or brief description | `test_name` — file:line |
+| **AC 2**: ... | Partial | Reason and what was done | Tests that exist |
+| **AC 3**: ... | Not Met | Explanation | N/A |
+
+### Status Definitions
+
+| Status | Meaning |
+| :--- | :--- |
+| **Complete** | The criterion is fully satisfied — implementation and tests are in place. |
+| **Partial** | The criterion is partially addressed but has known gaps (must explain why in the evidence column). |
+| **Not Met** | The criterion is not addressed in this PR (must explain why in the evidence column). |
+
+### Handling Incomplete Criteria
+
+If any acceptance criterion is marked **Partial** or **Not Met**:
+
+1. **Explain why** in the Implementation Evidence column (e.g., "scope limited — criterion deferred to follow-up PR", "blocked by upstream dependency", "out of scope for this issue").
+2. **Link to a follow-up issue** if the criterion is intentionally deferred.
+3. **Do not request payment evaluation** for incomplete criteria — payment is assessed against full acceptance criteria coverage.
+4. Reviewers may reject a PR with incomplete criteria unless a clear, accepted rationale is provided and the incomplete items are explicitly scoped out.
+
+> If you cannot mark all criteria Complete, be honest about it. Incomplete criteria with clear explanations and follow-up plans are accepted more readily than claims of completeness that don't hold up under review.
+
+---
+
+## Detailed Traceability Table Format (Advanced)
+
+For complex PRs involving storage changes, events, or security controls, include the detailed traceability table below instead of (or in addition to) the completion table.
 
 ### Table Structure
 
@@ -41,3 +74,4 @@ Every non-trivial PR must include a traceability table in its description. This 
 - **Audit Readiness**: Provides a clear roadmap for security auditors to verify that every requirement has a corresponding implementation and test.
 - **Review Efficiency**: Helps maintainers quickly locate the relevant logic and tests during the PR review process.
 - **Protocol Stability**: Ensures no edge cases or security controls are missed during implementation.
+- **Payment Readiness**: Enables contributors to self-evaluate before payment day — a complete table with all criteria marked Complete gives reviewers confidence to approve payment.

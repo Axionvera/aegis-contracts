@@ -3,6 +3,7 @@
 This document provides a standardized checklist for reviewers of the Aegis RWA smart contracts. Reviewers should ensure that every Pull Request (PR) maintains the protocol's high standards for security, compliance, and engineering excellence.
 
 ## 1. Requirement & Traceability Verification
+- [ ] **PR Evidence Checklist**: Has the contributor completed the [PR Evidence Checklist](../docs/pr-evidence-checklist.md) in the PR description, covering issue reference, implementation summary, tests, commands run, CI status, and acceptance criteria coverage?
 - [ ] **Acceptability Criteria**: Does the PR fully satisfy the [Acceptance Criteria] defined in the linked issue?
 - [ ] **Traceability Table**: Has the contributor provided a complete [Requirement Traceability Mapping](../docs/traceability-mapping.md)?
 - [ ] **Scope**: Does the implementation stay within the scope of the issue, avoiding "scope creep" or unrelated changes?

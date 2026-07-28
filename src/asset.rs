@@ -8,7 +8,11 @@ use soroban_sdk::{contractimpl, contracttype, Address, Env, String};
 use crate::admin::{require_not_paused, require_role};
 use crate::compliance;
 use crate::holding;
-use crate::lifecycle::{get_asset_status, require_asset_operable, AssetStatus};
+
+use crate::restrictions::{asset_status_reason, error_for_reason, RestrictionReason};
+
+use crate::lifecycle::{get_asset_status, AssetStatus};
+
 use crate::supply_cap;
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error, Role};
 
@@ -67,7 +71,6 @@ pub struct AssetMetadataUpdatedEvent {
     pub uri: String,
 }
 
-
 /// Returns the current asset lifecycle status, defaulting to `Active` when
 /// none has been recorded. Pure read — shared with the capability module so
 /// both report the same lifecycle state.
@@ -85,6 +88,7 @@ fn transition_is_valid(from: &AssetStatus, to: &AssetStatus) -> bool {
     }
 
     match from {
+        AssetStatus::Draft => matches!(to, AssetStatus::Active),
         AssetStatus::Active => {
             matches!(
                 to,
@@ -103,6 +107,27 @@ fn transition_is_valid(from: &AssetStatus, to: &AssetStatus) -> bool {
             to,
             AssetStatus::Active | AssetStatus::Retired | AssetStatus::Blocked
         ),
+    }
+}
+
+/// Asserts that the asset lifecycle status currently permits value movement
+/// (mint or transfer).
+///
+/// Returns the *specific* restriction error for the blocking status —
+/// `AssetPausedRestriction` (7000), `AssetRetiredRestriction` (7001), or
+/// `AssetBlockedRestriction` (7002) — instead of the older, generic
+/// `AssetNotActive` (6000). Each maps 1:1 onto a
+/// [`RestrictionReason`](crate::restrictions::RestrictionReason) so SDKs and
+/// dashboards can distinguish "try again later" from "this asset is retired".
+pub fn require_asset_movable(env: &Env) -> Result<(), Error> {
+    let reason = asset_status_reason(&get_asset_status_internal(env));
+    match error_for_reason(&reason) {
+        // Only lifecycle reasons can be produced here; `None` means Active.
+        Some(err) => Err(err),
+        None => {
+            debug_assert!(reason == RestrictionReason::None);
+            Ok(())
+        }
     }
 }
 
@@ -174,10 +199,14 @@ impl AegisContract {
         require_not_paused(&env);
         admin.require_auth();
         require_role(&env, &admin, Role::AssetManager);
-        require_asset_operable(&env);
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
+
+        // Resolve the asset lifecycle state into a *specific* restriction
+        // reason (paused / retired / blocked) rather than the generic
+        // `AssetNotActive`, so clients can explain the block precisely.
+        require_asset_movable(&env)?;
 
         // Consume the compliance lifecycle state: only an `Approved` receiver
         // may be credited. `Blocked` and `Pending` return their own error
@@ -188,12 +217,13 @@ impl AegisContract {
         // Enforce the active supply cap before increasing total supply.
         // This is a compliance-sensitive control: it must run even for the
         // admin/AssetManager, since the cap is a protocol-level invariant.
-        supply_cap::enforce_supply_cap(&env, amount);
+        supply_cap::enforce_supply_cap(&env, amount)?;
 
         // Enforce the per-investor holding cap before crediting the receiver.
         // This is a compliance-sensitive control that applies to every mint,
         // including those performed by the admin/AssetManager.
-        holding::enforce_holding_cap(&env, &to, amount);
+
+        holding::enforce_holding_cap(&env, &to, amount)?;
 
         let mut balance: i128 = env
             .storage()
@@ -231,10 +261,11 @@ impl AegisContract {
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) -> Result<(), Error> {
         require_not_paused(&env);
         from.require_auth();
-        require_asset_operable(&env);
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
+
+        require_asset_movable(&env)?;
 
         // Both parties must be `Approved` under the compliance lifecycle.
         // Sender is checked first so a blocked/pending sender is reported
@@ -245,7 +276,7 @@ impl AegisContract {
         // Enforce the per-investor holding cap before crediting the receiver.
         // Applies uniformly to transfers, so no investor can be credited
         // beyond their permitted holding.
-        holding::enforce_holding_cap(&env, &to, amount);
+        holding::enforce_holding_cap(&env, &to, amount)?;
 
         let mut from_balance: i128 = env
             .storage()

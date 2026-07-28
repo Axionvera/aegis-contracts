@@ -1,10 +1,8 @@
-
 // The legacy `Events::publish((topic,), payload)` API is used intentionally:
 // docs/events.md freezes these (topic, payload) shapes as a stable off-chain
 // contract, and src/test.rs asserts them exactly. Migrating to the
 // `#[contractevent]` macro must preserve every emitted shape byte-for-byte.
-use soroban_sdk::{contractimpl, contracttype, panic_with_error, Address, Env};
-
+use soroban_sdk::{contractimpl, contracttype, Address, Env};
 
 use crate::admin::{get_admin, require_not_paused};
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error};
@@ -50,7 +48,9 @@ pub fn get_pending_holding_cap(env: &Env) -> Option<i128> {
 /// Enforces the per-investor holding cap after `address` is credited with
 /// `incoming` tokens.
 ///
-/// Reverts if a cap is set (`> 0`) and the resulting balance would exceed it.
+/// Returns `Err(Error::HoldingCapExceeded)` (code 7003) if a cap is set (`> 0`)
+/// and the resulting balance would exceed it, so callers surface a specific
+/// restriction reason instead of a generic host panic.
 /// A cap of `0` is treated as "unrestricted" and never blocks. The check is
 /// performed on the *resulting* balance so it applies uniformly to both
 /// minting (crediting a new holder) and transfers (crediting a receiver).
@@ -59,30 +59,21 @@ pub fn get_pending_holding_cap(env: &Env) -> Option<i128> {
 /// retroactively clamp existing balances; if the cap is lowered below a
 /// holder's current balance, that holder simply cannot receive further
 /// tokens until their balance falls (via transfers out) or the cap is raised.
-pub fn enforce_holding_cap(env: &Env, address: &Address, incoming: i128) {
+pub fn enforce_holding_cap(env: &Env, address: &Address, incoming: i128) -> Result<(), Error> {
     let cap = get_holding_cap(env);
     if cap <= 0 {
-        return;
+        return Ok(());
     }
     let balance: i128 = env
         .storage()
         .persistent()
         .get(&DataKey::Balance(address.clone()))
         .unwrap_or(0);
-    // Overflow-safe check: if balance already exceeds cap, any positive incoming fails.
-    if balance > cap {
-        panic_with_error!(env, Error::HoldingCapExceeded);
+
+    if balance + incoming > cap {
+        return Err(Error::HoldingCapExceeded);
     }
-    let new_balance = match balance.checked_add(incoming) {
-        Some(val) => val,
-        None => {
-            // Addition overflow implies it exceeds any valid cap.
-            panic_with_error!(env, Error::HoldingCapExceeded);
-        }
-    };
-    if new_balance > cap {
-        panic_with_error!(env, Error::HoldingCapExceeded);
-    }
+    Ok(())
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
