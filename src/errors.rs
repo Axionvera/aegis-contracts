@@ -50,6 +50,10 @@ pub enum Error {
     InvalidAmount = 5000,
     /// The sender's balance is insufficient to cover the requested amount.
     InsufficientBalance = 5001,
+    /// Minting would exceed the active global supply cap.
+    SupplyCapExceeded = 5002,
+    /// The investor's balance would exceed the active holding cap.
+    HoldingCapExceeded = 5003,
     // ─── 6000s: Asset Metadata ──────────────────────────────────────────────
     /// Metadata update is blocked in the current lifecycle status
     /// (asset is Retired or Blocked).

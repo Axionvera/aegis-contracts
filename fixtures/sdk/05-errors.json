@@ -1,0 +1,336 @@
+{
+  "$schema_version": 1,
+  "fixture": "05-errors",
+  "purpose": "Every reachable error, captured from a real failing call, with its stable numeric code and category.",
+  "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+  "generator": "tests/sdk_fixtures.rs (cargo test --test sdk_fixtures)",
+  "notes": [
+    "Generated from live contract invocations in the Soroban test host; values are rendered from wire-level ScVal/XDR, never hand-written.",
+    "All addresses are synthetic, derived from SHA-256(\"aegis-fixture/<label>\"). They have no private keys and contain no real user data.",
+    "128-bit and 64-bit integers are encoded as decimal strings to stay lossless in JSON consumers that use IEEE-754 numbers."
+  ],
+  "scenarios": [
+    {
+      "id": "error-1000-already-initialized",
+      "description": "`initialize` on a contract that already has an admin. Indicates an integration bug, not user error.",
+      "call": "initialize",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 1000,
+          "name": "AlreadyInitialized",
+          "category": "configuration"
+        }
+      }
+    },
+    {
+      "id": "error-2000-not-initialized",
+      "description": "Any call that needs the admin on a contract that was never initialized. Raised via `panic_with_error!`, so it still carries the contract code 2000.",
+      "call": "set_role",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 2000,
+          "name": "NotInitialized",
+          "category": "storage"
+        }
+      }
+    },
+    {
+      "id": "error-2001-no-pending-admin-transfer",
+      "description": "`accept_admin` with no `transfer_admin` in flight.",
+      "call": "accept_admin",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 2001,
+          "name": "NoPendingAdminTransfer",
+          "category": "storage"
+        }
+      }
+    },
+    {
+      "id": "error-3000-unauthorized-mint",
+      "description": "A roleless investor attempts to mint. Surface as a generic permission message; do not leak role internals to end users.",
+      "call": "mint_asset",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 3000,
+          "name": "Unauthorized",
+          "category": "admin_authorization"
+        }
+      }
+    },
+    {
+      "id": "error-3000-unauthorized-wrong-role",
+      "description": "Roles are scoped, not hierarchical: a ComplianceOfficer cannot mint.",
+      "call": "mint_asset",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 3000,
+          "name": "Unauthorized",
+          "category": "admin_authorization"
+        }
+      }
+    },
+    {
+      "id": "error-3001-cannot-assign-admin-role",
+      "description": "`set_role` refuses Role::Admin; the 2-step `transfer_admin` flow must be used instead.",
+      "call": "set_role",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 3001,
+          "name": "CannotAssignAdminRole",
+          "category": "admin_authorization"
+        }
+      }
+    },
+    {
+      "id": "error-3002-no-role-to-revoke",
+      "description": "`remove_role` on an address that has no role assigned.",
+      "call": "remove_role",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 3002,
+          "name": "NoRoleToRevoke",
+          "category": "admin_authorization"
+        }
+      }
+    },
+    {
+      "id": "error-3003-not-pending-candidate",
+      "description": "Only the recorded candidate may accept an admin transfer.",
+      "call": "accept_admin",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 3003,
+          "name": "NotPendingCandidate",
+          "category": "admin_authorization"
+        }
+      }
+    },
+    {
+      "id": "error-3004-contract-paused",
+      "description": "All state-changing calls are blocked while paused. Reads stay available.",
+      "call": "transfer",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 3004,
+          "name": "ContractPaused",
+          "category": "admin_authorization"
+        }
+      }
+    },
+    {
+      "id": "error-3005-already-paused",
+      "description": "`pause` called while already paused.",
+      "call": "pause",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 3005,
+          "name": "AlreadyPaused",
+          "category": "admin_authorization"
+        }
+      }
+    },
+    {
+      "id": "error-3006-not-paused",
+      "description": "`unpause` called while the contract is running normally.",
+      "call": "unpause",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 3006,
+          "name": "NotPaused",
+          "category": "admin_authorization"
+        }
+      }
+    },
+    {
+      "id": "error-4000-sender-not-whitelisted",
+      "description": "The sending address has not completed compliance verification. Prompt the KYC flow rather than showing a raw error.",
+      "call": "transfer",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 4000,
+          "name": "SenderNotWhitelisted",
+          "category": "compliance"
+        }
+      }
+    },
+    {
+      "id": "error-4001-receiver-not-whitelisted-transfer",
+      "description": "The receiving address is not whitelisted. This is the canonical compliance-restricted transfer signal.",
+      "call": "transfer",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 4001,
+          "name": "ReceiverNotWhitelisted",
+          "category": "compliance"
+        }
+      }
+    },
+    {
+      "id": "error-4001-receiver-not-whitelisted-mint",
+      "description": "Minting to a non-whitelisted address fails with the same code as a transfer, so SDKs can share one handler.",
+      "call": "mint_asset",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 4001,
+          "name": "ReceiverNotWhitelisted",
+          "category": "compliance"
+        }
+      }
+    },
+    {
+      "id": "error-5000-invalid-amount-transfer",
+      "description": "Amounts must be strictly greater than zero.",
+      "call": "transfer",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 5000,
+          "name": "InvalidAmount",
+          "category": "minting_transfers"
+        }
+      }
+    },
+    {
+      "id": "error-5000-invalid-amount-mint-negative",
+      "description": "A negative mint amount is rejected before any balance is touched.",
+      "call": "mint_asset",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 5000,
+          "name": "InvalidAmount",
+          "category": "minting_transfers"
+        }
+      }
+    },
+    {
+      "id": "error-5001-insufficient-balance",
+      "description": "Transferring more than the sender holds. Note this is checked *after* compliance, so a non-whitelisted sender sees 4000 instead.",
+      "call": "transfer",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 5001,
+          "name": "InsufficientBalance",
+          "category": "minting_transfers"
+        }
+      }
+    },
+    {
+      "id": "error-7000-asset-not-active",
+      "description": "The asset lifecycle status is Draft (not Active), so issuance and transfers are blocked.",
+      "call": "mint_asset",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 7000,
+          "name": "AssetNotActive",
+          "category": "unknown"
+        }
+      }
+    },
+    {
+      "id": "error-7001-asset-lifecycle-paused",
+      "description": "The asset lifecycle status is Paused, so issuance and transfers are blocked. Distinct from the global contract pause (3004).",
+      "call": "mint_asset",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 7001,
+          "name": "AssetLifecyclePaused",
+          "category": "unknown"
+        }
+      }
+    },
+    {
+      "id": "error-7004-invalid-lifecycle-transition",
+      "description": "Retired is terminal: no transition out of it is permitted.",
+      "call": "set_asset_status",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 7004,
+          "name": "InvalidLifecycleTransition",
+          "category": "unknown"
+        }
+      }
+    },
+    {
+      "id": "error-6002-asset-metadata-update-blocked",
+      "description": "Metadata is frozen once the asset is Retired or Blocked.",
+      "call": "update_asset_metadata",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 6002,
+          "name": "AssetMetadataUpdateBlocked",
+          "category": "asset_metadata"
+        }
+      }
+    },
+    {
+      "id": "error-5002-supply-cap-exceeded",
+      "description": "The active supply cap was exceeded by a mint operation.",
+      "call": "mint_asset",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 5002,
+          "name": "SupplyCapExceeded",
+          "category": "minting_transfers"
+        }
+      }
+    },
+    {
+      "id": "error-5003-holding-cap-exceeded",
+      "description": "The per-investor holding cap was exceeded by a mint or transfer operation.",
+      "call": "mint_asset",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 5003,
+          "name": "HoldingCapExceeded",
+          "category": "minting_transfers"
+        }
+      }
+    }
+  ]
+}
