@@ -22,7 +22,7 @@
         "get_pending_holding_cap": null,
         "is_paused": false,
         "get_asset_status": [
-          "Active"
+          "Draft"
         ],
         "get_asset_metadata": {
           "name": "",
@@ -60,6 +60,9 @@
         },
         "eligibility": {
           "investor_alice": {
+            "asset_status": [
+              "Active"
+            ],
             "balance": "200000",
             "can_receive": true,
             "can_send": true,
@@ -69,6 +72,9 @@
             "whitelisted": true
           },
           "investor_bob": {
+            "asset_status": [
+              "Active"
+            ],
             "balance": "150000",
             "can_receive": true,
             "can_send": true,
@@ -90,6 +96,9 @@
         "get_balance_of": "1000",
         "is_whitelisted": true,
         "get_investor_eligibility": {
+          "asset_status": [
+            "Active"
+          ],
           "balance": "1000",
           "can_receive": false,
           "can_send": false,

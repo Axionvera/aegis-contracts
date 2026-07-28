@@ -109,6 +109,24 @@
       ]
     },
     {
+      "id": "event-contract-initialized",
+      "description": "Topic `contract_initialized`, emitted once on single-initialization.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "contract_initialized",
+          "topics": [
+            "contract_initialized"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAUY29udHJhY3RfaW5pdGlhbGl6ZWQAAAARAAAAAQAAAAEAAAAPAAAABWFkbWluAAAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/w="
+        }
+      ]
+    },
+    {
       "id": "event-role-assigned",
       "description": "Topic `role_assigned`. The `role` field is a unit enum, encoded as a single-element vector holding the variant name.",
       "events": [
@@ -337,7 +355,7 @@
             "asset_status_changed"
           ],
           "data": {
-            "caller": "GBLPHF3QVD22643G67KSIPOHI2OY5UDQJAW4XKNOZABV2HDXITYQ34FV",
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
             "new_status": [
               "Paused"
             ],
@@ -345,7 +363,7 @@
               "Active"
             ]
           },
-          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAUYXNzZXRfc3RhdHVzX2NoYW5nZWQAAAARAAAAAQAAAAMAAAAPAAAABmNhbGxlcgAAAAAAEgAAAAAAAAAAVvOXcKj1r3Nm99UkPcdGnY7QcEgty6muyANdHHdE8Q0AAAAPAAAACm5ld19zdGF0dXMAAAAAABAAAAABAAAAAQAAAA8AAAAGUGF1c2VkAAAAAAAPAAAAD3ByZXZpb3VzX3N0YXR1cwAAAAAQAAAAAQAAAAEAAAAPAAAABkFjdGl2ZQAA"
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAUYXNzZXRfc3RhdHVzX2NoYW5nZWQAAAARAAAAAQAAAAMAAAAPAAAABWFkbWluAAAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/wAAAAPAAAACm5ld19zdGF0dXMAAAAAABAAAAABAAAAAQAAAA8AAAAGUGF1c2VkAAAAAAAPAAAAD3ByZXZpb3VzX3N0YXR1cwAAAAAQAAAAAQAAAAEAAAAPAAAABkFjdGl2ZQAA"
         }
       ]
     },

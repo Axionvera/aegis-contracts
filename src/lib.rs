@@ -6,6 +6,7 @@ pub mod compliance;
 pub mod eligibility;
 pub mod errors;
 pub mod holding;
+pub mod lifecycle;
 pub mod supply_cap;
 #[cfg(test)]
 mod test;
@@ -13,6 +14,7 @@ mod test;
 use soroban_sdk::{contract, contractimpl, contracttype, Address, Env};
 
 pub use errors::Error;
+pub use lifecycle::AssetStatus;
 
 // ─── Events ───────────────────────────────────────────────────────────────────
 
@@ -71,7 +73,8 @@ pub enum DataKey {
     HoldingCap,
     /// The pending (proposed) holding cap awaiting 2-step acceptance.
     HoldingCapCandidate,
-    /// Current lifecycle status for the issued asset.
+    /// The lifecycle status of this asset (Draft, Active, Paused, Retired,
+    /// Blocked). Defaults to `Draft` when not set.
     AssetStatus,
     /// Display name for the issued asset.
     AssetName,

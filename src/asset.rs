@@ -5,9 +5,10 @@
 #![allow(deprecated)]
 use soroban_sdk::{contractimpl, contracttype, Address, Env, String};
 
-use crate::admin::{require_any_role, require_not_paused, require_role};
+use crate::admin::{require_not_paused, require_role};
 use crate::compliance;
 use crate::holding;
+use crate::lifecycle::{get_asset_status, require_asset_operable, AssetStatus};
 use crate::supply_cap;
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error, Role};
 
@@ -51,27 +52,10 @@ pub struct YieldDistributedEvent {
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum AssetStatus {
-    Active,
-    Paused,
-    Retired,
-    Blocked,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssetMetadata {
     pub name: String,
     pub symbol: String,
     pub uri: String,
-}
-
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct AssetStatusChangedEvent {
-    pub caller: Address,
-    pub previous_status: AssetStatus,
-    pub new_status: AssetStatus,
 }
 
 #[contracttype]
@@ -83,77 +67,8 @@ pub struct AssetMetadataUpdatedEvent {
     pub uri: String,
 }
 
-/// Returns the current asset lifecycle status, defaulting to `Active` when
-/// none has been recorded. Pure read — shared with the capability module so
-/// both report the same lifecycle state.
-pub fn get_asset_status_internal(env: &Env) -> AssetStatus {
-    env.storage()
-        .instance()
-        .get(&DataKey::AssetStatus)
-        .unwrap_or(AssetStatus::Active)
-}
-
-fn transition_is_valid(from: &AssetStatus, to: &AssetStatus) -> bool {
-    if from == to {
-        return false;
-    }
-
-    match from {
-        AssetStatus::Active => {
-            matches!(
-                to,
-                AssetStatus::Paused | AssetStatus::Retired | AssetStatus::Blocked
-            )
-        }
-        AssetStatus::Paused => {
-            matches!(
-                to,
-                AssetStatus::Active | AssetStatus::Retired | AssetStatus::Blocked
-            )
-        }
-        AssetStatus::Retired => false,
-        AssetStatus::Blocked => matches!(to, AssetStatus::Active | AssetStatus::Retired),
-    }
-}
-
 #[contractimpl]
 impl AegisContract {
-    /// Returns the current lifecycle status for the asset (`Active` by default).
-    pub fn get_asset_status(env: Env) -> AssetStatus {
-        get_asset_status_internal(&env)
-    }
-
-    /// Updates asset lifecycle status.
-    /// Requires EmergencyOfficer role or Admin.
-    pub fn set_asset_status(
-        env: Env,
-        caller: Address,
-        new_status: AssetStatus,
-    ) -> Result<(), Error> {
-        caller.require_auth();
-        require_any_role(&env, &caller, &[Role::EmergencyOfficer]);
-
-        let current = get_asset_status_internal(&env);
-        if !transition_is_valid(&current, &new_status) {
-            return Err(Error::InvalidAssetStatusTransition);
-        }
-
-        env.storage()
-            .instance()
-            .set(&DataKey::AssetStatus, &new_status);
-
-        env.events().publish(
-            ("asset_status_changed",),
-            AssetStatusChangedEvent {
-                caller,
-                previous_status: current,
-                new_status,
-            },
-        );
-
-        Ok(())
-    }
-
     /// Returns the current metadata snapshot for the asset.
     pub fn get_asset_metadata(env: Env) -> AssetMetadata {
         AssetMetadata {
@@ -189,7 +104,7 @@ impl AegisContract {
         caller.require_auth();
         require_role(&env, &caller, Role::AssetManager);
 
-        let status = get_asset_status_internal(&env);
+        let status = get_asset_status(&env);
         if matches!(status, AssetStatus::Retired | AssetStatus::Blocked) {
             return Err(Error::AssetMetadataUpdateBlocked);
         }
@@ -220,11 +135,9 @@ impl AegisContract {
         require_not_paused(&env);
         admin.require_auth();
         require_role(&env, &admin, Role::AssetManager);
+        require_asset_operable(&env);
         if amount <= 0 {
             return Err(Error::InvalidAmount);
-        }
-        if get_asset_status_internal(&env) != AssetStatus::Active {
-            return Err(Error::AssetNotActive);
         }
 
         if !compliance::is_whitelisted(&env, &to) {
@@ -277,11 +190,9 @@ impl AegisContract {
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) -> Result<(), Error> {
         require_not_paused(&env);
         from.require_auth();
+        require_asset_operable(&env);
         if amount <= 0 {
             return Err(Error::InvalidAmount);
-        }
-        if get_asset_status_internal(&env) != AssetStatus::Active {
-            return Err(Error::AssetNotActive);
         }
 
         if !compliance::is_whitelisted(&env, &from) {

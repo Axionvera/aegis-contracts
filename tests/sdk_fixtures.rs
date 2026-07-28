@@ -30,7 +30,7 @@ mod support;
 
 use soroban_sdk::{Address, String as SorobanString};
 
-use aegis_contracts::asset::AssetStatus;
+use aegis_contracts::lifecycle::AssetStatus;
 use aegis_contracts::{Error, Role};
 
 use support::{
@@ -119,8 +119,13 @@ fn error_name(e: Error) -> &'static str {
         Error::ReceiverNotWhitelisted => "ReceiverNotWhitelisted",
         Error::InvalidAmount => "InvalidAmount",
         Error::InsufficientBalance => "InsufficientBalance",
+        Error::SupplyCapExceeded => "SupplyCapExceeded",
+        Error::HoldingCapExceeded => "HoldingCapExceeded",
         Error::AssetNotActive => "AssetNotActive",
-        Error::InvalidAssetStatusTransition => "InvalidAssetStatusTransition",
+        Error::AssetLifecyclePaused => "AssetLifecyclePaused",
+        Error::AssetRetired => "AssetRetired",
+        Error::AssetBlocked => "AssetBlocked",
+        Error::InvalidLifecycleTransition => "InvalidLifecycleTransition",
         Error::AssetMetadataUpdateBlocked => "AssetMetadataUpdateBlocked",
     }
 }
@@ -162,6 +167,7 @@ fn bootstrap() -> Harness {
         &h.actor("emergency_officer"),
         &Role::EmergencyOfficer,
     );
+    c.set_asset_status(&h.actor("admin"), &AssetStatus::Active);
     c.whitelist_user(&h.actor("compliance_officer"), &h.actor("investor_alice"));
     c.whitelist_user(&h.actor("compliance_officer"), &h.actor("investor_bob"));
     h
@@ -935,6 +941,11 @@ fn fixture_events() {
         let h = Harness::new();
         let c = h.client();
         c.initialize(&h.actor("admin"));
+        push_event(
+            "event-contract-initialized",
+            "Topic `contract_initialized`, emitted once on single-initialization.",
+            h.events(),
+        );
 
         c.set_role(
             &h.actor("admin"),
@@ -1044,7 +1055,7 @@ fn fixture_events() {
         let h = bootstrap();
         let c = h.client();
 
-        c.set_asset_status(&h.actor("emergency_officer"), &AssetStatus::Paused);
+        c.set_asset_status(&h.actor("admin"), &AssetStatus::Paused);
         push_event(
             "event-asset-status-changed",
             "Topic `asset_status_changed`. Both statuses are unit enums encoded as \
@@ -1052,7 +1063,7 @@ fn fixture_events() {
             h.events(),
         );
 
-        c.set_asset_status(&h.actor("emergency_officer"), &AssetStatus::Active);
+        c.set_asset_status(&h.actor("admin"), &AssetStatus::Active);
         c.update_asset_metadata(
             &h.actor("asset_manager"),
             &SorobanString::from_str(&h.env, "Aegis Sample Tower"),
@@ -1444,32 +1455,47 @@ fn fixture_errors() {
         );
     }
 
-    // 6000 — AssetNotActive.
+    // 7000 — AssetNotActive.
     {
-        let h = bootstrap();
+        let h = Harness::new();
         let c = h.client();
-        c.set_asset_status(&h.actor("emergency_officer"), &AssetStatus::Paused);
-        let r = c.try_mint_asset(&h.actor("asset_manager"), &h.actor("investor_alice"), &100);
+        c.initialize(&h.actor("admin"));
+        let r = c.try_mint_asset(&h.actor("admin"), &h.actor("investor_alice"), &100);
         push_err(
-            "error-6000-asset-not-active",
-            "The asset lifecycle status is not Active, so issuance and transfers are \
-             blocked. Distinct from the global contract pause (3004).",
+            "error-7000-asset-not-active",
+            "The asset lifecycle status is Draft (not Active), so issuance and transfers are \
+             blocked.",
             "mint_asset",
             expect_err(r, Error::AssetNotActive),
         );
     }
 
-    // 6001 — InvalidAssetStatusTransition.
+    // 7001 — AssetLifecyclePaused.
     {
         let h = bootstrap();
         let c = h.client();
-        c.set_asset_status(&h.actor("emergency_officer"), &AssetStatus::Retired);
-        let r = c.try_set_asset_status(&h.actor("emergency_officer"), &AssetStatus::Active);
+        c.set_asset_status(&h.actor("admin"), &AssetStatus::Paused);
+        let r = c.try_mint_asset(&h.actor("asset_manager"), &h.actor("investor_alice"), &100);
         push_err(
-            "error-6001-invalid-asset-status-transition",
+            "error-7001-asset-lifecycle-paused",
+            "The asset lifecycle status is Paused, so issuance and transfers are \
+             blocked. Distinct from the global contract pause (3004).",
+            "mint_asset",
+            expect_err(r, Error::AssetLifecyclePaused),
+        );
+    }
+
+    // 7004 — InvalidLifecycleTransition.
+    {
+        let h = bootstrap();
+        let c = h.client();
+        c.set_asset_status(&h.actor("admin"), &AssetStatus::Retired);
+        let r = c.try_set_asset_status(&h.actor("admin"), &AssetStatus::Active);
+        push_err(
+            "error-7004-invalid-lifecycle-transition",
             "Retired is terminal: no transition out of it is permitted.",
             "set_asset_status",
-            expect_err(r, Error::InvalidAssetStatusTransition),
+            expect_err(r, Error::InvalidLifecycleTransition),
         );
     }
 
@@ -1477,7 +1503,7 @@ fn fixture_errors() {
     {
         let h = bootstrap();
         let c = h.client();
-        c.set_asset_status(&h.actor("emergency_officer"), &AssetStatus::Retired);
+        c.set_asset_status(&h.actor("admin"), &AssetStatus::Retired);
         let r = c.try_update_asset_metadata(
             &h.actor("asset_manager"),
             &SorobanString::from_str(&h.env, "Renamed"),
@@ -1492,7 +1518,7 @@ fn fixture_errors() {
         );
     }
 
-    // Host trap — supply cap exceeded.
+    // 5002 — SupplyCapExceeded.
     {
         let h = bootstrap();
         let c = h.client();
@@ -1505,21 +1531,15 @@ fn fixture_errors() {
             &h.actor("investor_alice"),
             &1_001,
         );
-        assert!(
-            matches!(r, Err(Err(_))),
-            "supply cap breach must surface as a host trap, got {r:?}"
-        );
         push_err(
-            "error-host-trap-supply-cap-exceeded",
-            "The supply cap is enforced with an `assert!`, which traps in the host \
-             rather than returning a contract error code. SDKs must fail safe here: \
-             there is no numeric code to match on.",
+            "error-5002-supply-cap-exceeded",
+            "The active supply cap was exceeded by a mint operation.",
             "mint_asset",
-            host_error("Mint would exceed the active supply cap"),
+            expect_err(r, Error::SupplyCapExceeded),
         );
     }
 
-    // Host trap — holding cap exceeded.
+    // 5003 — HoldingCapExceeded.
     {
         let h = bootstrap();
         let c = h.client();
@@ -1528,17 +1548,11 @@ fn fixture_errors() {
         c.accept_holding_cap(&admin);
 
         let r = c.try_mint_asset(&h.actor("asset_manager"), &h.actor("investor_alice"), &501);
-        assert!(
-            matches!(r, Err(Err(_))),
-            "holding cap breach must surface as a host trap, got {r:?}"
-        );
         push_err(
-            "error-host-trap-holding-cap-exceeded",
-            "The per-investor holding cap also traps in the host. Use \
-             `get_investor_eligibility` / `check_transfer_eligibility` to detect this \
-             *before* submitting, since the failure carries no contract code.",
+            "error-5003-holding-cap-exceeded",
+            "The per-investor holding cap was exceeded by a mint or transfer operation.",
             "mint_asset",
-            host_error("Transfer would exceed the investor holding cap"),
+            expect_err(r, Error::HoldingCapExceeded),
         );
     }
 
@@ -1567,7 +1581,7 @@ fn fixture_errors() {
         Error::InvalidAmount,
         Error::InsufficientBalance,
         Error::AssetNotActive,
-        Error::InvalidAssetStatusTransition,
+        Error::InvalidLifecycleTransition,
         Error::AssetMetadataUpdateBlocked,
     ];
 
@@ -1780,7 +1794,7 @@ fn fixture_capabilities() {
     {
         let h = bootstrap();
         let c = h.client();
-        let officer = h.actor("emergency_officer");
+        let admin = h.actor("admin");
 
         let mut statuses = Vec::new();
         let mut record = |label: &str, value: Json| {
@@ -1791,11 +1805,12 @@ fn fixture_capabilities() {
         };
 
         record("Active (default)", h.render(c.get_asset_status()));
-        c.set_asset_status(&officer, &AssetStatus::Paused);
+        c.set_asset_status(&admin, &AssetStatus::Paused);
         record("Paused", h.render(c.get_asset_status()));
-        c.set_asset_status(&officer, &AssetStatus::Blocked);
+        c.set_asset_status(&admin, &AssetStatus::Blocked);
         record("Blocked", h.render(c.get_asset_status()));
-        c.set_asset_status(&officer, &AssetStatus::Retired);
+        c.set_asset_status(&admin, &AssetStatus::Active);
+        c.set_asset_status(&admin, &AssetStatus::Retired);
         record("Retired (terminal)", h.render(c.get_asset_status()));
 
         scenarios.push(
