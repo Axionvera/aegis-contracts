@@ -127,6 +127,7 @@ fn error_name(e: Error) -> &'static str {
         Error::AssetBlocked => "AssetBlocked",
         Error::InvalidLifecycleTransition => "InvalidLifecycleTransition",
         Error::AssetMetadataUpdateBlocked => "AssetMetadataUpdateBlocked",
+        _ => "UnknownError",
     }
 }
 
@@ -1046,6 +1047,32 @@ fn fixture_events() {
         push_event(
             "event-holding-cap-amended",
             "Topic `holding_cap_amended`, step 2 — the per-investor cap is now enforced.",
+            h.events(),
+        );
+    }
+
+    // Protocol config governance events.
+    {
+        let h = bootstrap();
+        let c = h.client();
+        let admin = h.actor("admin");
+
+        let config = aegis_contracts::config::ProtocolConfig {
+            min_transfer_amount: 100,
+            max_batch_size: 50,
+        };
+
+        c.propose_config(&admin, &config);
+        push_event(
+            "event-config-proposed",
+            "Topic `config_proposed`, step 1 of protocol config governance.",
+            h.events(),
+        );
+
+        c.accept_config(&admin);
+        push_event(
+            "event-config-amended",
+            "Topic `config_amended`, step 2 — the new config is now active.",
             h.events(),
         );
     }

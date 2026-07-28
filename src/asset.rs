@@ -78,6 +78,7 @@ pub fn get_asset_status_internal(env: &Env) -> AssetStatus {
         .unwrap_or(AssetStatus::Active)
 }
 
+#[allow(dead_code)]
 fn transition_is_valid(from: &AssetStatus, to: &AssetStatus) -> bool {
     if from == to {
         return false;
@@ -98,10 +99,13 @@ fn transition_is_valid(from: &AssetStatus, to: &AssetStatus) -> bool {
         }
         AssetStatus::Retired => false,
         AssetStatus::Blocked => matches!(to, AssetStatus::Active | AssetStatus::Retired),
+        AssetStatus::Draft => matches!(
+            to,
+            AssetStatus::Active | AssetStatus::Retired | AssetStatus::Blocked
+        ),
     }
 }
 
-n
 #[contractimpl]
 impl AegisContract {
     /// Returns the current metadata snapshot for the asset.

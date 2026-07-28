@@ -10,13 +10,14 @@ use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey};
 
 /// Schema version of the [`ContractCapabilities`] response.
 ///
+///
 /// Bump this whenever a field is **added** to any capability struct, or a
 /// capability key is added to the registry, so an SDK pinned to an older
 /// schema can detect that the deployed contract may advertise capabilities it
 /// does not know about. Fields are append-only: never remove or repurpose an
 /// existing field or key (same stability contract as `docs/events.md` topics
 /// and `docs/error-codes.md` numeric codes).
-pub const CAPABILITY_SCHEMA_VERSION: u32 = 2;
+pub const CAPABILITY_SCHEMA_VERSION: u32 = 3;
 
 // ─── Response types ───────────────────────────────────────────────────────────
 
@@ -163,6 +164,16 @@ pub struct MetadataCapabilities {
     pub lifecycle_restricted: bool,
 }
 
+/// Global protocol configuration capabilities (`config.rs`).
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ConfigCapabilities {
+    /// Whether the global configuration module is compiled into this deployment.
+    pub module_enabled: bool,
+    /// Protocol configuration 2-step governance.
+    pub global_config: CapabilityStatus,
+}
+
 /// Event schema capabilities. See `docs/events.md` for topic/payload shapes.
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -243,6 +254,8 @@ pub struct ContractCapabilities {
     pub metadata: MetadataCapabilities,
     /// Event schema capabilities.
     pub events: EventCapabilities,
+    /// Protocol configuration capabilities.
+    pub config: ConfigCapabilities,
 }
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
@@ -369,6 +382,10 @@ pub fn get_capabilities(env: &Env) -> ContractCapabilities {
             transfer_restriction_events: CapabilityStatus::Unsupported,
             asset_registered_event: CapabilityStatus::Planned,
         },
+        config: ConfigCapabilities {
+            module_enabled: true,
+            global_config: CapabilityStatus::Supported,
+        },
     }
 }
 
@@ -474,6 +491,11 @@ pub fn supports_capability(env: &Env, capability: &Symbol) -> CapabilityStatus {
         return caps.metadata.decimals;
     }
 
+    // ── Config ──
+    if *capability == Symbol::new(env, "global_config") {
+        return caps.config.global_config;
+    }
+
     // ── Events ──
     if *capability == Symbol::new(env, "events") {
         return status_of(caps.events.module_enabled);
@@ -530,6 +552,7 @@ pub fn get_capability_keys(env: &Env) -> Vec<Symbol> {
         Symbol::new(env, "compliance_lifecycle_events"),
         Symbol::new(env, "transfer_restriction_events"),
         Symbol::new(env, "asset_registered_event"),
+        Symbol::new(env, "global_config"),
     ]
 }
 

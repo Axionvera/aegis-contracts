@@ -66,6 +66,9 @@
             "balance": "200000",
             "can_receive": true,
             "can_send": true,
+            "compliance_status": [
+              "Approved"
+            ],
             "contract_paused": false,
             "holding_cap": "600000",
             "remaining_capacity": "400000",
@@ -78,6 +81,9 @@
             "balance": "150000",
             "can_receive": true,
             "can_send": true,
+            "compliance_status": [
+              "Approved"
+            ],
             "contract_paused": false,
             "holding_cap": "600000",
             "remaining_capacity": "450000",
@@ -102,6 +108,9 @@
           "balance": "1000",
           "can_receive": false,
           "can_send": false,
+          "compliance_status": [
+            "Approved"
+          ],
           "contract_paused": true,
           "holding_cap": "0",
           "remaining_capacity": null,

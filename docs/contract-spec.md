@@ -76,6 +76,14 @@ Pure reads; never mutate state, require no authorization, and remain available b
 * `cancel_holding_cap_proposal(env, admin)`: Discards a pending proposal. Only admin; blocked when paused.
 * Enforcement (`enforce_holding_cap`): `mint_asset` and `transfer` call this before crediting the receiver. Reverts with `HoldingCapExceeded` (`5003`) when `balance + incoming > cap`. A cap of `0` means no restriction.
 
+## Protocol Configuration (config.rs)
+
+* `get_protocol_config(env)`: Returns the active global `ProtocolConfig`.
+* `get_pending_protocol_config(env)`: Returns the pending proposed `ProtocolConfig` (`None` if none).
+* `propose_config(env, admin, proposed_config)`: Initiates a 2-step configuration amendment (`config_proposed` event). Only admin; blocked when paused. Rejects malformed configurations (e.g., negative limits).
+* `accept_config(env, admin)`: Activates the pending configuration (`config_amended` event). Only admin; blocked when paused.
+* `cancel_config_proposal(env, admin)`: Discards a pending proposal. Only admin; blocked when paused.
+
 ## Read Functions
 
 These functions are always available, even when the contract is paused:

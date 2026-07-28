@@ -1,8 +1,10 @@
 #![no_std]
+#![allow(deprecated)]
 pub mod admin;
 pub mod asset;
 pub mod capabilities;
 pub mod compliance;
+pub mod config;
 pub mod eligibility;
 pub mod errors;
 pub mod holding;
@@ -10,6 +12,8 @@ pub mod lifecycle;
 pub mod supply_cap;
 #[cfg(test)]
 mod test;
+#[cfg(test)]
+mod config_test;
 
 use soroban_sdk::{contract, contractimpl, contracttype, Address, Env};
 
@@ -90,6 +94,10 @@ pub enum DataKey {
     AssetSymbol,
     /// Optional metadata URI for off-chain asset details.
     AssetMetadataUri,
+    /// The globally active protocol configuration.
+    ProtocolConfig,
+    /// The pending (proposed) protocol configuration.
+    ProtocolConfigCandidate,
 }
 
 #[contract]

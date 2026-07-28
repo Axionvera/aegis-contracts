@@ -1,7 +1,7 @@
 use soroban_sdk::{contractimpl, contracttype, Address, Env};
 
 use crate::admin::is_paused;
-use crate::asset::{get_asset_status_internal, AssetStatus};
+use crate::asset::get_asset_status_internal;
 use crate::compliance::{get_compliance_status, is_whitelisted, ComplianceStatus};
 use crate::holding::get_holding_cap;
 use crate::lifecycle::{get_asset_status, AssetStatus};
