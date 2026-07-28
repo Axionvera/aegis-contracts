@@ -87,6 +87,7 @@ This document provides a complete audit map of all Soroban storage keys used by 
 | Function | Operation | Failure path | Test |
 |---|---|---|---|
 | `set_compliance_status` | **Write** | `ContractPaused` if paused; `Unauthorized` if caller lacks a compliance role (or is not admin when leaving `Blocked`); `ComplianceStatusUnchanged` on a no-op; `InvalidComplianceTransition` if the matrix forbids it | `test_full_happy_path_lifecycle_walk`, `test_every_invalid_transition_is_rejected_exhaustively`, `test_only_admin_can_unblock`, `test_set_compliance_status_blocked_when_paused` |
+| `batch_set_compliance_status` | **Write** | Same transition, authorization, and pause errors as `set_compliance_status`; rejects duplicate users with `InvalidComplianceTransition`; validates the whole batch before writing | `test_batch_set_compliance_status_updates_many_addresses_atomically`, `test_batch_set_compliance_status_rejects_invalid_entry_without_partial_write` |
 | `whitelist_user` | **Write** (→ `Approved`) | As above; `InvalidComplianceTransition` if currently `Blocked` | `test_legacy_whitelist_wrappers_drive_the_lifecycle`, `test_legacy_whitelist_cannot_lift_a_block` |
 | `revoke_whitelist` | **Write** (→ `Revoked`) | As above; a tolerated no-op from `Unknown` / `Blocked` | `test_legacy_revoke_does_not_downgrade_a_block`, `test_legacy_revoke_of_unknown_address_is_a_tolerated_no_op` |
 | `get_compliance_status` | **Read** | Returns `Unknown` if not set; never panics | `test_compliance_status_defaults_to_unknown` |

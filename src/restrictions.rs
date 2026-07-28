@@ -22,9 +22,10 @@
 use soroban_sdk::{contractimpl, contracttype, Address, Env};
 
 use crate::admin::{get_role, is_paused};
-use crate::asset::{get_asset_status_internal, AssetStatus};
+use crate::asset::get_asset_status_internal;
 use crate::compliance::is_whitelisted;
 use crate::holding::get_holding_cap;
+use crate::lifecycle::AssetStatus;
 use crate::supply_cap::get_supply_cap;
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error, Role};
 
@@ -169,6 +170,7 @@ pub fn code_for_reason(reason: &RestrictionReason) -> u32 {
 pub fn asset_status_reason(status: &AssetStatus) -> RestrictionReason {
     match status {
         AssetStatus::Active => RestrictionReason::None,
+        AssetStatus::Draft => RestrictionReason::AssetBlocked,
         AssetStatus::Paused => RestrictionReason::AssetPaused,
         AssetStatus::Retired => RestrictionReason::AssetRetired,
         AssetStatus::Blocked => RestrictionReason::AssetBlocked,

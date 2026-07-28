@@ -11,7 +11,7 @@ use crate::holding;
 
 use crate::restrictions::{asset_status_reason, error_for_reason, RestrictionReason};
 
-use crate::lifecycle::{get_asset_status, require_asset_operable, AssetStatus};
+use crate::lifecycle::{get_asset_status, AssetStatus};
 
 use crate::supply_cap;
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error, Role};
@@ -71,7 +71,6 @@ pub struct AssetMetadataUpdatedEvent {
     pub uri: String,
 }
 
-
 /// Returns the current asset lifecycle status, defaulting to `Active` when
 /// none has been recorded. Pure read — shared with the capability module so
 /// both report the same lifecycle state.
@@ -88,6 +87,7 @@ fn transition_is_valid(from: &AssetStatus, to: &AssetStatus) -> bool {
     }
 
     match from {
+        AssetStatus::Draft => matches!(to, AssetStatus::Active),
         AssetStatus::Active => {
             matches!(
                 to,
@@ -104,7 +104,6 @@ fn transition_is_valid(from: &AssetStatus, to: &AssetStatus) -> bool {
         AssetStatus::Blocked => matches!(to, AssetStatus::Active | AssetStatus::Retired),
     }
 }
-
 
 /// Asserts that the asset lifecycle status currently permits value movement
 /// (mint or transfer).
@@ -126,9 +125,6 @@ pub fn require_asset_movable(env: &Env) -> Result<(), Error> {
         }
     }
 }
-
-
-n
 
 #[contractimpl]
 impl AegisContract {
@@ -198,7 +194,6 @@ impl AegisContract {
         require_not_paused(&env);
         admin.require_auth();
         require_role(&env, &admin, Role::AssetManager);
-        require_asset_operable(&env);
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
@@ -224,9 +219,6 @@ impl AegisContract {
         // including those performed by the admin/AssetManager.
 
         holding::enforce_holding_cap(&env, &to, amount)?;
-
-        holding::enforce_holding_cap(&env, &to, amount);
-
 
         let mut balance: i128 = env
             .storage()
@@ -264,13 +256,11 @@ impl AegisContract {
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) -> Result<(), Error> {
         require_not_paused(&env);
         from.require_auth();
-        require_asset_operable(&env);
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
 
         require_asset_movable(&env)?;
-
 
         // Both parties must be `Approved` under the compliance lifecycle.
         // Sender is checked first so a blocked/pending sender is reported

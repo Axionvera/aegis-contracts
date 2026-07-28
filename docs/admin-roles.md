@@ -7,9 +7,9 @@ This document describes the role-based access control (RBAC) system for the Aegi
 | Role | Description | Privileged Operations |
 |---|---|---|
 | `Admin` | Supreme authority. Can perform all operations and manage roles. | All operations + role management + admin transfer |
-| `ComplianceOfficer` | Manages the compliance whitelist. | `whitelist_user`, `revoke_whitelist` |
+| `ComplianceOfficer` | Manages the compliance whitelist and lifecycle. | `whitelist_user`, `revoke_whitelist`, `set_compliance_status`, `batch_set_compliance_status` |
 | `AssetManager` | Manages asset minting and yield distribution. | `mint_asset`, `distribute_yield` |
-| `EmergencyOfficer` | Combined compliance + asset privileges for operational flexibility. | `whitelist_user`, `revoke_whitelist`, `mint_asset`, `distribute_yield` |
+| `EmergencyOfficer` | Combined compliance + asset privileges for operational flexibility. | `whitelist_user`, `revoke_whitelist`, `set_compliance_status`, `batch_set_compliance_status`, `mint_asset`, `distribute_yield` |
 | `None` | No role assigned. Cannot perform any privileged operation. | None (except `transfer` which requires self-auth) |
 
 ### Admin Bypass
@@ -118,11 +118,16 @@ If the candidate does not accept, the transfer can be superseded by a new `trans
 | `distribute_yield` | `AssetManager` | Yes |
 | `whitelist_user` | `ComplianceOfficer` | Yes |
 | `revoke_whitelist` | `ComplianceOfficer` | Yes |
+| `set_compliance_status` | `ComplianceOfficer`* | Yes |
+| `batch_set_compliance_status` | `ComplianceOfficer`* | Yes |
 | `set_role` | `Admin` | N/A (admin-only) |
 | `remove_role` | `Admin` | N/A (admin-only) |
 | `transfer` | Self-auth | N/A |
 | `transfer_admin` | `Admin` | N/A (admin-only) |
 | `accept_admin` | Candidate auth | N/A |
+
+`*` Moving an address out of `Blocked` is admin-only, including inside
+`batch_set_compliance_status`.
 
 ## Storage Layout
 

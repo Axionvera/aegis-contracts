@@ -80,7 +80,7 @@ not file them as bugs or wait for them:
 
 
 `Planned` items — `allowances`, `transfer_from`, `transfer_fees`,
-`decimals`, `sep41_token_interface`, `batch_whitelisting`,
+`decimals`, `sep41_token_interface`,
 `yield_distribution`, and `asset_registered_event` — correspond to the gaps
 tracked in
 [`dashboard-readiness-review.md`](dashboard-readiness-review.md) and the
@@ -121,7 +121,8 @@ pub struct ContractCapabilities {
 | `module_enabled` | `bool` | `true` | Compliance module compiled in. |
 | `whitelist` | status | `Supported` | `whitelist_user`. |
 | `whitelist_revocation` | status | `Supported` | `revoke_whitelist`. |
-| `batch_whitelisting` | status | `Planned` | Many addresses per invocation. |
+| `batch_whitelisting` | status | `Supported` | Many addresses per invocation via `batch_set_compliance_status`. |
+| `batch_status_updates` | status | `Supported` | Atomic multi-address lifecycle updates via `batch_set_compliance_status`. |
 | `investor_tiers` | status | `Unsupported` | Jurisdiction/accreditation tiers. |
 | `lifecycle_states` | status | `Supported` | Five-state compliance lifecycle + `get_compliance_status`. See [`compliance-lifecycle.md`](compliance-lifecycle.md). |
 | `lifecycle_transitions` | status | `Supported` | Enforced transition matrix on `set_compliance_status`, plus the pre-flight transition reads. |
@@ -210,6 +211,7 @@ Registry (also returned by `get_capability_keys()`):
 | `whitelist` | `compliance.whitelist` |
 | `whitelist_revocation` | `compliance.whitelist_revocation` |
 | `batch_whitelisting` | `compliance.batch_whitelisting` |
+| `compliance_batch_updates` | `compliance.batch_status_updates` |
 | `investor_tiers` | `compliance.investor_tiers` |
 | `compliance_lifecycle` | `compliance.lifecycle_states` |
 | `compliance_transitions` | `compliance.lifecycle_transitions` |
