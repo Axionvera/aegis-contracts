@@ -85,6 +85,7 @@ value-encoding rules, and the no-real-user-data guarantee.
 ## CI & Contributing
 
 - [Evaluation Readiness Summary](docs/evaluation-readiness.md) — **central page** summarizing what makes a contribution evaluation-ready: testing standards, CI workflow, PR evidence, acceptance criteria mapping, self-review, and conduct guidance
+- [PR Evidence Checklist](docs/pr-evidence-checklist.md) — **mandatory** evidence checklist for every PR: issue reference, implementation summary, tests, commands run, CI status, and acceptance criteria coverage
 - [Local Verification Command](docs/local-verification.md) — run `make verify` (fmt-check + clippy + test + build) before pushing to avoid failing CI
 - [Failing CI Response Guide](docs/failing-ci-guide.md) — how to reproduce and fix Rust, Soroban, Makefile, dependency, and workflow failures (failing checks can block approval)
 - [Payment-Period Conduct Note](docs/payment-period-conduct.md) — contributor expectations during paid periods: no spam, self-review, GrantFox evaluation, CI/testing

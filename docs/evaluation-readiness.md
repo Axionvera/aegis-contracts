@@ -63,26 +63,22 @@ This repo uses external automation via `Axionvera/pocketpay-issue-automation` fo
 
 ## 3. PR Evidence Checklist
 
-Your PR description must include:
+Every PR must include a completed [PR Evidence Checklist](./pr-evidence-checklist.md)
+covering:
 
-### Required elements:
-- [ ] **Description** — clear explanation of what changed and why
-- [ ] **Related Issues** — link to the issue this PR addresses (e.g., `Fixes #123`)
-- [ ] **Completion Table** — maps every acceptance criterion to a status (Complete/Partial/Not Met), implementation evidence, and test evidence (see [Completion Table Format](./traceability-mapping.md#completion-table-format))
-- [ ] **Traceability Mapping Table** — detailed map of acceptance criteria to implementation, storage changes, events, tests, and security controls (for complex PRs)
-- [ ] **Type of Change** — select appropriate category (bug fix, new feature, breaking change, documentation, chore)
-- [ ] **Review Checklist** — all items checked (see below)
+1. **Issue Reference** — link to the issue being addressed
+2. **Implementation Summary** — what changed and which files were modified
+3. **Tests Added or Justification** — test names and locations, or an approved
+   no-test justification
+4. **Commands Run** — paste output of `make verify` (or equivalent)
+5. **CI Status** — all GitHub Actions checks pass (green)
+6. **Acceptance Criteria Coverage** — every criterion mapped in the Completion
+   Table with evidence
 
-### Review Checklist items:
-- [ ] Read `CONTRIBUTING.md` guidelines
-- [ ] Code follows Rust and Soroban formatting standards (`cargo fmt`)
-- [ ] No new warnings (`cargo clippy`)
-- [ ] Added/updated tests for new logic, all tests pass (`cargo test`)
-- [ ] **Completion Table** filled out with status per criterion
-- [ ] **Traceability Mapping** filled out in PR description
-- [ ] Reviewed against [Reviewer Checklist](./reviewer-checklist.md)
-- [ ] Verified compliance with [Legal Boundary Disclaimer](./legal-boundary-disclaimer.md)
+The checklist is embedded directly in the PR template's `## PR Evidence Checklist`
+section. Fill out every applicable item before requesting review.
 
+📖 **Full guide:** [PR Evidence Checklist](./pr-evidence-checklist.md)
 📖 **PR Template:** [`.github/PULL_REQUEST_TEMPLATE.md`](../.github/PULL_REQUEST_TEMPLATE.md)
 
 ---

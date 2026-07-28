@@ -35,15 +35,48 @@
 - [ ] Documentation update
 - [ ] Chore (refactoring, build tools, etc.)
 
-## Review Checklist
+## PR Evidence Checklist
 
-Before opening this PR, please verify the following:
+Before opening this PR, complete every applicable item in the evidence
+checklist below. See [PR Evidence Checklist](../docs/pr-evidence-checklist.md)
+for detailed guidance.
 
+### 1. Issue Reference
+- [ ] The PR description links to the issue being addressed (e.g. `Fixes #123`).
+
+### 2. Implementation Summary
+- [ ] A concise summary of what was implemented, changed, or fixed is provided
+      above in the Description section.
+- [ ] Key files modified are listed with brief descriptions of each change.
+- [ ] New public functions, events, error codes, or roles are documented.
+
+### 3. Tests Added or Justification
+- [ ] New or updated tests cover the change (happy path + failure paths).
+- [ ] Test names and locations are listed (e.g. `test_mint_ok` in
+      `src/test.rs:L45-60`).
+- [ ] **OR** a [No-Test Justification](../docs/testing-standards.md#how-to-submit-a-no-test-justification)
+      is provided and explicitly approved.
+
+### 4. Commands Run
+- [ ] `make verify` passes locally.
+- [ ] Paste the relevant command output in the Additional Context section below.
+
+### 5. CI Status
+- [ ] All GitHub Actions checks pass (green) on the PR branch.
+- [ ] If CI is failing, a clear explanation and link to the follow-up issue is
+      provided.
+
+### 6. Acceptance Criteria Coverage
+- [ ] Every acceptance criterion from the issue is addressed in the Completion
+      Table above.
+- [ ] Incomplete criteria include a rationale and, where applicable, a link to
+      a follow-up issue.
+
+### Project Standards
 - [ ] I have read the `CONTRIBUTING.md` guidelines.
 - [ ] My code follows the Rust and Soroban formatting standards (ran `cargo fmt`).
 - [ ] My changes generate no new warnings (ran `cargo clippy`).
 - [ ] I have added/updated tests for the new logic, and all tests pass (ran `cargo test`).
-- [ ] **Completion Table:** I have filled out the completion table above — every acceptance criterion has a status and evidence.
 - [ ] **Traceability Mapping:** I have filled out the detailed mapping table for any storage, event, or security changes.
 - [ ] **Reviewer Guidance:** I have reviewed my own changes against the [Reviewer Checklist](../docs/reviewer-checklist.md).
 - [ ] **Compliance & Legal Check:** I have verified that any new documentation or features do not imply regulatory completeness beyond smart contract enforcement, as per the [Legal Boundary Disclaimer](../docs/legal-boundary-disclaimer.md).
