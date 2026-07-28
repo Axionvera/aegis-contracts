@@ -1,3 +1,4 @@
+
 // The legacy `Events::publish((topic,), payload)` API is used intentionally:
 // docs/events.md freezes these (topic, payload) shapes as a stable off-chain
 // contract, and src/test.rs asserts them exactly. Migrating to the
@@ -5,8 +6,11 @@
 #![allow(deprecated)]
 use soroban_sdk::{contractimpl, contracttype, Address, Env};
 
+use soroban_sdk::{contractimpl, contracttype, panic_with_error, Address, Env};
+
+
 use crate::admin::{get_admin, require_not_paused};
-use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey};
+use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error};
 
 // ─── Events ───────────────────────────────────────────────────────────────────
 
@@ -68,10 +72,20 @@ pub fn enforce_holding_cap(env: &Env, address: &Address, incoming: i128) {
         .persistent()
         .get(&DataKey::Balance(address.clone()))
         .unwrap_or(0);
-    assert!(
-        balance + incoming <= cap,
-        "Transfer would exceed the investor holding cap"
-    );
+    // Overflow-safe check: if balance already exceeds cap, any positive incoming fails.
+    if balance > cap {
+        panic_with_error!(env, Error::HoldingCapExceeded);
+    }
+    let new_balance = match balance.checked_add(incoming) {
+        Some(val) => val,
+        None => {
+            // Addition overflow implies it exceeds any valid cap.
+            panic_with_error!(env, Error::HoldingCapExceeded);
+        }
+    };
+    if new_balance > cap {
+        panic_with_error!(env, Error::HoldingCapExceeded);
+    }
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────

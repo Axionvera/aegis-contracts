@@ -50,6 +50,8 @@ variants can be added to a category without renumbering any other category.
 | 4001 | `ReceiverNotWhitelisted` | Compliance     | The receiving address is not on the compliance whitelist.            |
 | 5000 | `InvalidAmount`          | Minting/Transfer | The requested amount was not strictly greater than zero.           |
 | 5001 | `InsufficientBalance`    | Minting/Transfer | The sender's balance cannot cover the requested transfer amount.   |
+| 5002 | `SupplyCapExceeded`     | Minting/Transfer | Minting would exceed the active global supply cap.                  |
+| 5003 | `HoldingCapExceeded`    | Minting/Transfer | The investor's balance would exceed the active holding cap.         |
 
 ## SDK mapping guidance
 
@@ -71,6 +73,8 @@ variants can be added to a category without renumbering any other category.
      than showing a raw error.
    - `5000` → "Enter an amount greater than zero."
    - `5001` → "Insufficient balance for this transfer."
+   - `5002` → "This mint exceeds the configured maximum supply cap."
+   - `5003` → "This action would exceed the investor's permitted holding limit."
    - `1000`/`2000`/`2001` → these indicate integration or environment bugs
      (calling the contract in the wrong state), not user error. Log them
      and surface a generic "Something went wrong" message rather than
