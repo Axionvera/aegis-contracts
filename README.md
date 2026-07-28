@@ -102,6 +102,7 @@ Every target honours the variables in `.env` and accepts inline overrides, e.g.
 
 ## CI & Contributing
 
+- [Local Verification Command](docs/local-verification.md) — run `make verify` (fmt-check + clippy + test + build) before pushing to avoid failing CI
 - [Failing CI Response Guide](docs/failing-ci-guide.md) — how to reproduce and fix Rust, Soroban, Makefile, dependency, and workflow failures (failing checks can block approval)
 - [Payment-Period Conduct Note](docs/payment-period-conduct.md) — contributor expectations during paid periods: no spam, self-review, GrantFox evaluation, CI/testing
 - [Meaningful Implementation Checklist](docs/meaningful-implementation-checklist.md) — what counts as real contract work: behaviour, security, tests, events, acceptance criteria + reviewer checks
