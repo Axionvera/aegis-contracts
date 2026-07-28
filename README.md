@@ -24,7 +24,9 @@ Run the comprehensive test suite locally:
    ```bash
    make test
    ```
-## Security
+## Security & Compliance
+
+> **Important**: Please read our [Legal Boundary Disclaimer](docs/legal-boundary-disclaimer.md) to understand the off-chain assumptions and limitations of the RWA tokenization model.
 
 - [RWA Protocol Threat Model](docs/threat-model.md) — protected assets, trust boundaries, threat catalog (compliance bypass, admin/role misuse, minting and transfer risks, pause misuse, event reliability), and explicit off-chain/legal out-of-scope items
 - [Emergency Pause Policy](docs/emergency-pause.md) — global pause mechanism, authorization, and trust model
