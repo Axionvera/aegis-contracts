@@ -57,7 +57,7 @@ privilege.
 | Proposed cap equals active cap | Reverts (`Proposed cap equals the active cap — no change requested`). |
 | Negative proposed cap | Reverts (`Supply cap must be non-negative`). |
 | Cap lowered below current supply | Allowed. Existing supply is **not** burned; further mints that would exceed the (lower) cap are blocked until supply falls or the cap is raised. |
-| Mint would exceed cap | Reverts (`Mint would exceed the active supply cap`). |
+| Mint would exceed cap | Reverts (`Error::SupplyCapExceeded`, code `5002`). |
 | Contract paused | All cap governance calls and `mint_asset` revert. |
 
 ## Why 2-step (and not immediate)?
