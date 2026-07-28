@@ -1,22 +1,230 @@
-use soroban_sdk::{contractimpl, Address, Env};
+use soroban_sdk::{contractimpl, contracttype, Address, Env, String};
 
-use crate::admin::{get_admin, require_role};
+use crate::admin::{require_any_role, require_not_paused, require_role};
 use crate::compliance;
-use crate::{AegisContract, DataKey, Role};
+use crate::holding;
+use crate::supply_cap;
+use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error, Role};
+
+// ─── Events ───────────────────────────────────────────────────────────────────
+
+/// Emitted when new RWA units are minted to a whitelisted address. This is
+/// the canonical asset-issuance event: the protocol does not model a
+/// separate "asset registration" step distinct from minting (see
+/// `docs/events.md` for the scope note), so dashboards and indexers should
+/// treat `AssetMintedEvent` as marking both the issuance and, for a
+/// recipient's first mint, its effective registration as an asset holder.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct AssetMintedEvent {
+    pub caller: Address,
+    pub to: Address,
+    pub amount: i128,
+    pub total_supply: i128,
+}
+
+/// Emitted on every successful transfer between two whitelisted addresses.
+/// Soroban discards events from reverted invocations, so a transfer blocked
+/// by `SenderNotWhitelisted` / `ReceiverNotWhitelisted` never reaches this
+/// point and emits no event — the standardized error code itself is the
+/// off-chain-observable signal for a compliance-restricted transfer. See
+/// `docs/events.md` for details.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct TransferEvent {
+    pub from: Address,
+    pub to: Address,
+    pub amount: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct YieldDistributedEvent {
+    pub caller: Address,
+    pub amount: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AssetStatus {
+    Active,
+    Paused,
+    Retired,
+    Blocked,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AssetMetadata {
+    pub name: String,
+    pub symbol: String,
+    pub uri: String,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct AssetStatusChangedEvent {
+    pub caller: Address,
+    pub previous_status: AssetStatus,
+    pub new_status: AssetStatus,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct AssetMetadataUpdatedEvent {
+    pub caller: Address,
+    pub name: String,
+    pub symbol: String,
+    pub uri: String,
+}
+
+fn get_asset_status_internal(env: &Env) -> AssetStatus {
+    env.storage()
+        .instance()
+        .get(&DataKey::AssetStatus)
+        .unwrap_or(AssetStatus::Active)
+}
+
+fn transition_is_valid(from: &AssetStatus, to: &AssetStatus) -> bool {
+    if from == to {
+        return false;
+    }
+
+    match from {
+        AssetStatus::Active => {
+            matches!(to, AssetStatus::Paused | AssetStatus::Retired | AssetStatus::Blocked)
+        }
+        AssetStatus::Paused => {
+            matches!(to, AssetStatus::Active | AssetStatus::Retired | AssetStatus::Blocked)
+        }
+        AssetStatus::Retired => false,
+        AssetStatus::Blocked => matches!(to, AssetStatus::Active | AssetStatus::Retired),
+    }
+}
 
 #[contractimpl]
 impl AegisContract {
+    /// Returns the current lifecycle status for the asset (`Active` by default).
+    pub fn get_asset_status(env: Env) -> AssetStatus {
+        get_asset_status_internal(&env)
+    }
+
+    /// Updates asset lifecycle status.
+    /// Requires EmergencyOfficer role or Admin.
+    pub fn set_asset_status(
+        env: Env,
+        caller: Address,
+        new_status: AssetStatus,
+    ) -> Result<(), Error> {
+        caller.require_auth();
+        require_any_role(&env, &caller, &[Role::EmergencyOfficer]);
+
+        let current = get_asset_status_internal(&env);
+        if !transition_is_valid(&current, &new_status) {
+            return Err(Error::InvalidAssetStatusTransition);
+        }
+
+        env.storage()
+            .instance()
+            .set(&DataKey::AssetStatus, &new_status);
+
+        env.events().publish(
+            ("asset_status_changed",),
+            AssetStatusChangedEvent {
+                caller,
+                previous_status: current,
+                new_status,
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Returns the current metadata snapshot for the asset.
+    pub fn get_asset_metadata(env: Env) -> AssetMetadata {
+        AssetMetadata {
+            name: env
+                .storage()
+                .instance()
+                .get(&DataKey::AssetName)
+                .unwrap_or(String::from_str(&env, "")),
+            symbol: env
+                .storage()
+                .instance()
+                .get(&DataKey::AssetSymbol)
+                .unwrap_or(String::from_str(&env, "")),
+            uri: env
+                .storage()
+                .instance()
+                .get(&DataKey::AssetMetadataUri)
+                .unwrap_or(String::from_str(&env, "")),
+        }
+    }
+
+    /// Updates asset metadata.
+    /// Requires AssetManager role or Admin.
+    /// Blocked in Retired/Blocked states.
+    pub fn update_asset_metadata(
+        env: Env,
+        caller: Address,
+        name: String,
+        symbol: String,
+        uri: String,
+    ) -> Result<(), Error> {
+        require_not_paused(&env);
+        caller.require_auth();
+        require_role(&env, &caller, Role::AssetManager);
+
+        let status = get_asset_status_internal(&env);
+        if matches!(status, AssetStatus::Retired | AssetStatus::Blocked) {
+            return Err(Error::AssetMetadataUpdateBlocked);
+        }
+
+        env.storage().instance().set(&DataKey::AssetName, &name);
+        env.storage().instance().set(&DataKey::AssetSymbol, &symbol);
+        env.storage().instance().set(&DataKey::AssetMetadataUri, &uri);
+
+        env.events().publish(
+            ("asset_metadata_updated",),
+            AssetMetadataUpdatedEvent {
+                caller,
+                name,
+                symbol,
+                uri,
+            },
+        );
+
+        Ok(())
+    }
+
     /// Mints new RWA tokens to a whitelisted address.
     /// Requires the AssetManager role or Admin.
-    pub fn mint_asset(env: Env, admin: Address, to: Address, amount: i128) {
+    /// Blocked when the contract is paused.
+    pub fn mint_asset(env: Env, admin: Address, to: Address, amount: i128) -> Result<(), Error> {
+        require_not_paused(&env);
         admin.require_auth();
         require_role(&env, &admin, Role::AssetManager);
-        assert!(amount > 0, "Amount must be positive");
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+        if get_asset_status_internal(&env) != AssetStatus::Active {
+            return Err(Error::AssetNotActive);
+        }
 
-        assert!(
-            compliance::is_whitelisted(&env, &to),
-            "Receiver is not whitelisted"
-        );
+        if !compliance::is_whitelisted(&env, &to) {
+            return Err(Error::ReceiverNotWhitelisted);
+        }
+
+        // Enforce the active supply cap before increasing total supply.
+        // This is a compliance-sensitive control: it must run even for the
+        // admin/AssetManager, since the cap is a protocol-level invariant.
+        supply_cap::enforce_supply_cap(&env, amount);
+
+        // Enforce the per-investor holding cap before crediting the receiver.
+        // This is a compliance-sensitive control that applies to every mint,
+        // including those performed by the admin/AssetManager.
+        holding::enforce_holding_cap(&env, &to, amount);
+
 
         let mut balance: i128 = env
             .storage()
@@ -26,7 +234,7 @@ impl AegisContract {
         balance += amount;
         env.storage()
             .persistent()
-            .set(&DataKey::Balance(to), &balance);
+            .set(&DataKey::Balance(to.clone()), &balance);
 
         let mut supply: i128 = env
             .storage()
@@ -35,34 +243,58 @@ impl AegisContract {
             .unwrap_or(0);
         supply += amount;
         env.storage().instance().set(&DataKey::TotalSupply, &supply);
+
+        env.events().publish(
+            ("asset_minted",),
+            AssetMintedEvent {
+                caller: admin,
+                to,
+                amount,
+                total_supply: supply,
+            },
+        );
+
+        Ok(())
     }
 
     /// Transfers tokens between two whitelisted addresses.
-    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+    /// Blocked when the contract is paused.
+    pub fn transfer(env: Env, from: Address, to: Address, amount: i128) -> Result<(), Error> {
+        require_not_paused(&env);
         from.require_auth();
-        assert!(amount > 0, "Amount must be positive");
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
+        if get_asset_status_internal(&env) != AssetStatus::Active {
+            return Err(Error::AssetNotActive);
+        }
 
-        assert!(
-            compliance::is_whitelisted(&env, &from),
-            "Sender is not whitelisted"
-        );
-        assert!(
-            compliance::is_whitelisted(&env, &to),
-            "Receiver is not whitelisted"
-        );
+        if !compliance::is_whitelisted(&env, &from) {
+            return Err(Error::SenderNotWhitelisted);
+        }
+        if !compliance::is_whitelisted(&env, &to) {
+            return Err(Error::ReceiverNotWhitelisted);
+        }
+
+        // Enforce the per-investor holding cap before crediting the receiver.
+        // Applies uniformly to transfers, so no investor can be credited
+        // beyond their permitted holding.
+        holding::enforce_holding_cap(&env, &to, amount);
 
         let mut from_balance: i128 = env
             .storage()
             .persistent()
             .get(&DataKey::Balance(from.clone()))
             .unwrap_or(0);
-        assert!(from_balance >= amount, "Insufficient balance");
+        if from_balance < amount {
+            return Err(Error::InsufficientBalance);
+        }
 
         // TODO: Implement fee deduction on transfer
         from_balance -= amount;
         env.storage()
             .persistent()
-            .set(&DataKey::Balance(from), &from_balance);
+            .set(&DataKey::Balance(from.clone()), &from_balance);
 
         let mut to_balance: i128 = env
             .storage()
@@ -72,19 +304,38 @@ impl AegisContract {
         to_balance += amount;
         env.storage()
             .persistent()
-            .set(&DataKey::Balance(to), &to_balance);
+            .set(&DataKey::Balance(to.clone()), &to_balance);
+
+        env.events()
+            .publish(("transfer",), TransferEvent { from, to, amount });
+
+        Ok(())
     }
 
     /// Mocks the distribution of yield to current token holders.
     /// Requires the AssetManager role or Admin.
-    pub fn distribute_yield(env: Env, admin: Address, amount: i128) {
+    /// Blocked when the contract is paused.
+    pub fn distribute_yield(env: Env, admin: Address, amount: i128) -> Result<(), Error> {
+        require_not_paused(&env);
         admin.require_auth();
         require_role(&env, &admin, Role::AssetManager);
-        assert!(amount > 0, "Amount must be positive");
+        if amount <= 0 {
+            return Err(Error::InvalidAmount);
+        }
 
         // Mock implementation. Real-world Soroban implementation requires
         // snapshotting balances or utilizing a claim-based dividend pull pattern
         // rather than iterating over maps to avoid gas limits.
         // TODO: Implement scalable yield snapshot mechanism
+
+        env.events().publish(
+            ("yield_distributed",),
+            YieldDistributedEvent {
+                caller: admin,
+                amount,
+            },
+        );
+
+        Ok(())
     }
 }

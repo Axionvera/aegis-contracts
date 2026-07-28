@@ -1,6 +1,25 @@
-use soroban_sdk::{contractimpl, contracttype, Address, Env};
+use soroban_sdk::{contractimpl, contracttype, panic_with_error, Address, Env};
 
-use crate::{AegisContract, DataKey, Role};
+use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error, Role};
+
+// ─── Pause helpers ────────────────────────────────────────────────────────────
+
+/// Returns `true` if the contract is currently paused.
+pub fn is_paused(env: &Env) -> bool {
+    env.storage()
+        .instance()
+        .get(&DataKey::Paused)
+        .unwrap_or(false)
+}
+
+/// Asserts that the contract is **not** paused. Reverts with a descriptive
+/// message if the contract is paused. Call this at the top of every
+/// state-changing operation that should be blocked during a pause.
+pub fn require_not_paused(env: &Env) {
+    if is_paused(env) {
+        panic_with_error!(env, Error::ContractPaused);
+    }
+}
 
 // ─── Events ───────────────────────────────────────────────────────────────────
 
@@ -34,14 +53,26 @@ pub struct AdminTransferredEvent {
     pub new_admin: Address,
 }
 
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ContractPausedEvent {
+    pub admin: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ContractUnpausedEvent {
+    pub admin: Address,
+}
+
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
 /// Returns the current supreme admin address. Panics if not initialized.
 pub fn get_admin(env: &Env) -> Address {
-    env.storage()
-        .instance()
-        .get(&DataKey::Admin)
-        .expect("Admin not initialized")
+    match env.storage().instance().get(&DataKey::Admin) {
+        Some(admin) => admin,
+        None => panic_with_error!(env, Error::NotInitialized),
+    }
 }
 
 /// Returns the role assigned to an address, or Role::None if unassigned.
@@ -63,7 +94,25 @@ pub fn require_role(env: &Env, caller: &Address, required: Role) {
         return;
     }
 
-    assert!(role == required, "Unauthorized: required role not held");
+    if role != required {
+        panic_with_error!(env, Error::Unauthorized);
+    }
+}
+
+/// Asserts that `caller` holds one of the `allowed` roles or is the supreme
+/// admin. Reverts with `Error::Unauthorized` on failure.
+pub fn require_any_role(env: &Env, caller: &Address, allowed: &[Role]) {
+    let role = get_role(env, caller);
+    let admin = get_admin(env);
+
+    // The supreme admin bypasses all role checks.
+    if *caller == admin {
+        return;
+    }
+
+    if !allowed.contains(&role) {
+        panic_with_error!(env, Error::Unauthorized);
+    }
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -71,21 +120,19 @@ pub fn require_role(env: &Env, caller: &Address, required: Role) {
 #[contractimpl]
 impl AegisContract {
     /// Assigns a role to `target`. Only the supreme admin can call this.
-    pub fn set_role(env: Env, admin: Address, target: Address, role: Role) {
+    /// Blocked when the contract is paused.
+    pub fn set_role(env: Env, admin: Address, target: Address, role: Role) -> Result<(), Error> {
+        require_not_paused(&env);
         admin.require_auth();
-        assert_eq!(
-            admin,
-            get_admin(&env),
-            "Unauthorized: only admin can assign roles"
-        );
+        if admin != get_admin(&env) {
+            return Err(Error::Unauthorized);
+        }
 
         // Prevent assigning the Admin role to another address — use
         // transfer_admin for a safe 2-step handoff instead.
-        assert_ne!(
-            role,
-            Role::Admin,
-            "Cannot assign Admin role via set_role; use transfer_admin"
-        );
+        if role == Role::Admin {
+            return Err(Error::CannotAssignAdminRole);
+        }
 
         env.storage()
             .persistent()
@@ -99,20 +146,24 @@ impl AegisContract {
                 role,
             },
         );
+
+        Ok(())
     }
 
     /// Revokes the role from `target`, setting it to Role::None.
     /// Only the supreme admin can call this.
-    pub fn remove_role(env: Env, admin: Address, target: Address) {
+    /// Blocked when the contract is paused.
+    pub fn remove_role(env: Env, admin: Address, target: Address) -> Result<(), Error> {
+        require_not_paused(&env);
         admin.require_auth();
-        assert_eq!(
-            admin,
-            get_admin(&env),
-            "Unauthorized: only admin can revoke roles"
-        );
+        if admin != get_admin(&env) {
+            return Err(Error::Unauthorized);
+        }
 
         let previous_role = get_role(&env, &target);
-        assert_ne!(previous_role, Role::None, "Target has no role to revoke");
+        if previous_role == Role::None {
+            return Err(Error::NoRoleToRevoke);
+        }
 
         env.storage()
             .persistent()
@@ -126,6 +177,8 @@ impl AegisContract {
                 role: previous_role,
             },
         );
+
+        Ok(())
     }
 
     /// Returns the role assigned to `address`.
@@ -135,13 +188,13 @@ impl AegisContract {
 
     /// Initiates a 2-step admin transfer. Sets `candidate` as the pending new
     /// admin. Only the current admin can call this.
-    pub fn transfer_admin(env: Env, admin: Address, candidate: Address) {
+    /// Blocked when the contract is paused.
+    pub fn transfer_admin(env: Env, admin: Address, candidate: Address) -> Result<(), Error> {
+        require_not_paused(&env);
         admin.require_auth();
-        assert_eq!(
-            admin,
-            get_admin(&env),
-            "Unauthorized: only admin can transfer admin"
-        );
+        if admin != get_admin(&env) {
+            return Err(Error::Unauthorized);
+        }
 
         env.storage()
             .instance()
@@ -154,23 +207,26 @@ impl AegisContract {
                 candidate,
             },
         );
+
+        Ok(())
     }
 
     /// Completes a 2-step admin transfer. The `candidate` must call this to
     /// accept the role. Only the pending candidate can call this.
-    pub fn accept_admin(env: Env, candidate: Address) {
+    /// Blocked when the contract is paused.
+    pub fn accept_admin(env: Env, candidate: Address) -> Result<(), Error> {
+        require_not_paused(&env);
         candidate.require_auth();
 
-        let stored_candidate: Address = env
-            .storage()
-            .instance()
-            .get(&DataKey::AdminCandidate)
-            .expect("No pending admin transfer");
+        let stored_candidate: Address = match env.storage().instance().get(&DataKey::AdminCandidate)
+        {
+            Some(candidate) => candidate,
+            None => return Err(Error::NoPendingAdminTransfer),
+        };
 
-        assert_eq!(
-            candidate, stored_candidate,
-            "Caller is not the pending admin candidate"
-        );
+        if candidate != stored_candidate {
+            return Err(Error::NotPendingCandidate);
+        }
 
         let previous_admin = get_admin(&env);
 
@@ -195,17 +251,19 @@ impl AegisContract {
                 new_admin: candidate,
             },
         );
+
+        Ok(())
     }
 
     /// The current admin can renounce their own admin role. This is an
     /// irreversible action — use with caution.
-    pub fn renounce_admin(env: Env, admin: Address) {
+    /// Blocked when the contract is paused.
+    pub fn renounce_admin(env: Env, admin: Address) -> Result<(), Error> {
+        require_not_paused(&env);
         admin.require_auth();
-        assert_eq!(
-            admin,
-            get_admin(&env),
-            "Unauthorized: only admin can renounce"
-        );
+        if admin != get_admin(&env) {
+            return Err(Error::Unauthorized);
+        }
 
         env.storage().instance().remove(&DataKey::Admin);
         env.storage()
@@ -215,9 +273,61 @@ impl AegisContract {
         env.events().publish(
             ("admin_renounced",),
             AdminTransferredEvent {
-                previous_admin: admin,
+                previous_admin: admin.clone(),
                 new_admin: admin, // Self-renounced
             },
         );
+
+        Ok(())
+    }
+
+    /// Returns whether the contract is currently paused.
+    pub fn is_paused(env: Env) -> bool {
+        is_paused(&env)
+    }
+
+    /// Pauses the contract. When paused, all state-changing operations
+    /// (minting, transfers, compliance changes) are blocked. Read functions
+    /// remain available.
+    ///
+    /// Only the admin or an EmergencyOfficer can pause the contract.
+    pub fn pause(env: Env, caller: Address) -> Result<(), Error> {
+        caller.require_auth();
+        require_role(&env, &caller, Role::EmergencyOfficer);
+
+        if is_paused(&env) {
+            return Err(Error::AlreadyPaused);
+        }
+
+        env.storage().instance().set(&DataKey::Paused, &true);
+
+        env.events()
+            .publish(("contract_paused",), ContractPausedEvent { admin: caller });
+
+        Ok(())
+    }
+
+    /// Unpauses the contract, restoring normal operations.
+    ///
+    /// Only the admin can unpause — this ensures that a compromised
+    /// EmergencyOfficer cannot unpause after a legitimate admin-initiated pause.
+    pub fn unpause(env: Env, caller: Address) -> Result<(), Error> {
+        caller.require_auth();
+        if caller != get_admin(&env) {
+            return Err(Error::Unauthorized);
+        }
+
+        if !is_paused(&env) {
+            return Err(Error::NotPaused);
+        }
+
+        env.storage().instance().set(&DataKey::Paused, &false);
+
+        env.events().publish(
+            ("contract_unpaused",),
+            ContractUnpausedEvent { admin: caller },
+        );
+
+        Ok(())
     }
 }
