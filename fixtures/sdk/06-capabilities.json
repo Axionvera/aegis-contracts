@@ -1,0 +1,145 @@
+{
+  "$schema_version": 1,
+  "fixture": "06-capabilities",
+  "purpose": "Read-only capability surface: balances, supply, caps, pause, status, metadata.",
+  "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+  "generator": "tests/sdk_fixtures.rs (cargo test --test sdk_fixtures)",
+  "notes": [
+    "Generated from live contract invocations in the Soroban test host; values are rendered from wire-level ScVal/XDR, never hand-written.",
+    "All addresses are synthetic, derived from SHA-256(\"aegis-fixture/<label>\"). They have no private keys and contain no real user data.",
+    "128-bit and 64-bit integers are encoded as decimal strings to stay lossless in JSON consumers that use IEEE-754 numbers."
+  ],
+  "scenarios": [
+    {
+      "id": "reads-freshly-initialized-contract",
+      "description": "Every read on a freshly initialized contract. Caps default to 0 (unbounded/unrestricted), pending caps are null, the asset defaults to Active, and metadata strings are empty until set.",
+      "state": "initialized only",
+      "reads": {
+        "get_total_supply": "0",
+        "get_supply_cap": "0",
+        "get_pending_supply_cap": null,
+        "get_holding_cap": "0",
+        "get_pending_holding_cap": null,
+        "is_paused": false,
+        "get_asset_status": [
+          "Draft"
+        ],
+        "get_asset_metadata": {
+          "name": "",
+          "symbol": "",
+          "uri": ""
+        },
+        "get_balance_of(outsider_dave)": "0",
+        "is_whitelisted(outsider_dave)": false
+      }
+    },
+    {
+      "id": "reads-fully-configured-contract",
+      "description": "A realistic configured state: caps set, metadata populated, two holders, one transfer settled. This is the reference state for dashboard rendering tests.",
+      "setup": [
+        "supply cap 1000000, holding cap 600000",
+        "mint 250000 to alice, 100000 to bob",
+        "transfer 50000 alice -> bob"
+      ],
+      "reads": {
+        "get_total_supply": "350000",
+        "get_supply_cap": "1000000",
+        "get_holding_cap": "600000",
+        "is_paused": false,
+        "get_asset_status": [
+          "Active"
+        ],
+        "get_asset_metadata": {
+          "name": "Aegis Sample Tower",
+          "symbol": "AST",
+          "uri": "https://example.invalid/aegis/sample-tower.json"
+        },
+        "balances": {
+          "investor_alice": "200000",
+          "investor_bob": "150000"
+        },
+        "eligibility": {
+          "investor_alice": {
+            "asset_status": [
+              "Active"
+            ],
+            "balance": "200000",
+            "can_receive": true,
+            "can_send": true,
+            "contract_paused": false,
+            "holding_cap": "600000",
+            "remaining_capacity": "400000",
+            "whitelisted": true
+          },
+          "investor_bob": {
+            "asset_status": [
+              "Active"
+            ],
+            "balance": "150000",
+            "can_receive": true,
+            "can_send": true,
+            "contract_paused": false,
+            "holding_cap": "600000",
+            "remaining_capacity": "450000",
+            "whitelisted": true
+          }
+        }
+      }
+    },
+    {
+      "id": "reads-while-paused",
+      "description": "Reads stay callable during a pause, but every eligibility flag goes false because no state-changing call can succeed. Dashboards should show a maintenance banner driven by `is_paused` rather than treating the false flags as a compliance failure.",
+      "state": "paused",
+      "reads": {
+        "is_paused": true,
+        "get_total_supply": "1000",
+        "get_balance_of": "1000",
+        "is_whitelisted": true,
+        "get_investor_eligibility": {
+          "asset_status": [
+            "Active"
+          ],
+          "balance": "1000",
+          "can_receive": false,
+          "can_send": false,
+          "contract_paused": true,
+          "holding_cap": "0",
+          "remaining_capacity": null,
+          "whitelisted": true
+        },
+        "check_transfer_eligibility": false
+      }
+    },
+    {
+      "id": "reads-asset-status-values",
+      "description": "Every value `get_asset_status` can return, in a valid transition order. Retired is terminal.",
+      "call": "get_asset_status",
+      "values": [
+        {
+          "status": "Active (default)",
+          "get_asset_status": [
+            "Active"
+          ]
+        },
+        {
+          "status": "Paused",
+          "get_asset_status": [
+            "Paused"
+          ]
+        },
+        {
+          "status": "Blocked",
+          "get_asset_status": [
+            "Blocked"
+          ]
+        },
+        {
+          "status": "Retired (terminal)",
+          "get_asset_status": [
+            "Retired"
+          ]
+        }
+      ]
+    }
+  ]
+}

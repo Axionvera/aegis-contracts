@@ -75,28 +75,54 @@ This document provides a complete audit map of all Soroban storage keys used by 
 
 ---
 
+### `ComplianceStatus(Address)`
+
+| Property | Value |
+|---|---|
+| **DataKey** | `DataKey::ComplianceStatus(Address)` |
+| **Value type** | `ComplianceStatus` (enum: `Unknown`, `Pending`, `Approved`, `Revoked`, `Blocked`) |
+| **Storage class** | Persistent |
+| **Lifecycle** | Created on the address's first lifecycle transition; overwritten on every subsequent transition; never removed |
+
+| Function | Operation | Failure path | Test |
+|---|---|---|---|
+| `set_compliance_status` | **Write** | `ContractPaused` if paused; `Unauthorized` if caller lacks a compliance role (or is not admin when leaving `Blocked`); `ComplianceStatusUnchanged` on a no-op; `InvalidComplianceTransition` if the matrix forbids it | `test_full_happy_path_lifecycle_walk`, `test_every_invalid_transition_is_rejected_exhaustively`, `test_only_admin_can_unblock`, `test_set_compliance_status_blocked_when_paused` |
+| `whitelist_user` | **Write** (→ `Approved`) | As above; `InvalidComplianceTransition` if currently `Blocked` | `test_legacy_whitelist_wrappers_drive_the_lifecycle`, `test_legacy_whitelist_cannot_lift_a_block` |
+| `revoke_whitelist` | **Write** (→ `Revoked`) | As above; a tolerated no-op from `Unknown` / `Blocked` | `test_legacy_revoke_does_not_downgrade_a_block`, `test_legacy_revoke_of_unknown_address_is_a_tolerated_no_op` |
+| `get_compliance_status` | **Read** | Returns `Unknown` if not set; never panics | `test_compliance_status_defaults_to_unknown` |
+| `require_can_send` / `require_can_receive` | **Read** | Returns a status-specific error code (4000/4002/4004 sender, 4001/4003/4005 receiver) | `test_mint_rejects_each_non_approved_status_with_its_own_code`, `test_transfer_rejects_each_non_approved_sender_status` |
+
+**Invariants**:
+- An address with no entry reads as `Unknown` — the fail-closed default that permits nothing.
+- `Unknown` is never written as a target: compliance history is never erased.
+- A transition is persisted only if `transition_is_allowed(current, new)` holds; rejected transitions leave storage untouched.
+- Leaving `Blocked` requires the supreme admin and can only target `Pending`.
+- Every persisted transition emits exactly one `compliance_status_changed` event carrying the previous and new state.
+- Non-`Approved` states freeze a holder's `Balance` but never modify it.
+
+See [Compliance Status Lifecycle](compliance-lifecycle.md) for the full matrix.
+
+---
+
 ### `Whitelist(Address)`
 
 | Property | Value |
 |---|---|
 | **DataKey** | `DataKey::Whitelist(Address)` |
-| **Value type** | `bool` (stored as `true` when whitelisted) |
+| **Value type** | `bool` (stored as `true` when approved) |
 | **Storage class** | Persistent |
-| **Lifecycle** | Set on whitelist; removed on revoke |
+| **Lifecycle** | **Derived mirror** of `ComplianceStatus(Address)`, kept for backwards compatibility. Written only by the lifecycle writer: set to `true` when a transition lands on `Approved`, removed on every other transition. |
 
 | Function | Operation | Failure path | Test |
 |---|---|---|---|
-| `whitelist_user` | **Write** (set to `true`) | Panics if paused; panics if caller lacks `ComplianceOfficer` role | `test_whitelist_succeeds_with_compliance_officer_role`, `test_whitelist_blocked_when_paused` |
-| `revoke_whitelist` | **Write** (remove) | Panics if paused; panics if caller lacks `ComplianceOfficer` role | `test_revoke_whitelist_succeeds_with_compliance_officer_role`, `test_revoke_whitelist_blocked_when_paused` |
-| `is_whitelisted` | **Read** | Returns `false` if not set | (exercised by mint and transfer tests) |
-| `is_whitelisted` (public) | **Read** | Returns `false` if not set | `test_read_functions_available_when_paused` |
+| `write_status` (internal) | **Write** (set/remove) | Never fails independently — always runs inside an already-validated transition | `test_full_happy_path_lifecycle_walk` |
+| `is_whitelisted` (public) | **Read** | Derived from `ComplianceStatus`; returns `false` if not `Approved` | `test_read_functions_available_when_paused` |
 
 **Invariants**:
-- A whitelisted address has `Whitelist(addr)` = `true` in persistent storage.
-- A non-whitelisted address has no `Whitelist(addr)` entry (reads as `false`).
-- `revoke_whitelist` removes the entry entirely (does not set to `false`).
-- `mint_asset` and `transfer` assert both sender and receiver are whitelisted.
-- Whitelist status is not affected by pause state for reads — only writes are blocked.
+- `Whitelist(addr) == true` ⟺ `ComplianceStatus(addr) == Approved`. The two keys are written together and cannot drift.
+- **Not the source of truth.** Read `ComplianceStatus` instead; this key exists only so pre-lifecycle integrations keep working.
+- A non-approved address has no `Whitelist(addr)` entry (reads as `false`).
+- Status is not affected by pause state for reads — only writes are blocked.
 
 ---
 
@@ -191,17 +217,20 @@ sum(Balance[addr] for all addr) == TotalSupply
 After `initialize`, exactly one address holds the Admin role. This is maintained through `accept_admin` (atomic swap) and broken only by `renounce_admin`.
 **Test coverage**: `test_full_admin_transfer`, `test_renounce_admin_removes_admin`
 
-### Whitelist Gating
+### Compliance Lifecycle Gating
 ```
-∀ mint_asset(to): Whitelist(to) == true
-∀ transfer(from, to): Whitelist(from) == true ∧ Whitelist(to) == true
+∀ mint_asset(to):        ComplianceStatus(to)   == Approved
+∀ transfer(from, to):    ComplianceStatus(from) == Approved ∧ ComplianceStatus(to) == Approved
+∀ transition(from, to):  transition_is_allowed(from, to)
 ```
-Tokens can only be created at or transferred to whitelisted addresses.
-**Test coverage**: `test_mint_reverts_without_asset_manager_role`, `test_lifecycle`
+Tokens can only be created at or transferred between compliance-`Approved`
+addresses; every other lifecycle state fails closed with its own error code.
+Status changes themselves are constrained by the transition matrix.
+**Test coverage**: `test_mint_rejects_each_non_approved_status_with_its_own_code`, `test_transfer_rejects_each_non_approved_sender_status`, `test_transfer_rejects_each_non_approved_receiver_status`, `test_every_invalid_transition_is_rejected_exhaustively`, `test_lifecycle`
 
 ### Pause Immutability
 ```
-Paused == true ⟹ ∀ op ∈ {mint, transfer, whitelist, revoke, yield, set_role, remove_role, transfer_admin, accept_admin, renounce_admin}: op() reverts
+Paused == true ⟹ ∀ op ∈ {mint, transfer, set_compliance_status, whitelist, revoke, yield, set_role, remove_role, transfer_admin, accept_admin, renounce_admin}: op() reverts
 ```
 **Test coverage**: `test_mint_blocked_when_paused`, `test_transfer_blocked_when_paused`, `test_whitelist_blocked_when_paused`, `test_revoke_whitelist_blocked_when_paused`, `test_distribute_yield_blocked_when_paused`, `test_set_role_blocked_when_paused`, `test_remove_role_blocked_when_paused`
 

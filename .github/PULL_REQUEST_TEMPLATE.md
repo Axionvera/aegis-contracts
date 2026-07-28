@@ -4,6 +4,14 @@
 ## Related Issues
 <!-- Link to any related issues (e.g., Fixes #123) -->
 
+## Traceability Mapping
+<!-- Please map your changes to the issue's acceptance criteria using the table below. See docs/traceability-mapping.md for details and examples. -->
+
+| Acceptance Criteria | Implementation | Storage & State Changes | Events Emitted | Test Coverage | Security/Safety Controls |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **AC 1**: | | | | | |
+| **AC 2**: | | | | | |
+
 ## Type of Change
 - [ ] Bug fix (non-breaking change which fixes an issue)
 - [ ] New feature (non-breaking change which adds functionality)
@@ -19,6 +27,8 @@ Before opening this PR, please verify the following:
 - [ ] My code follows the Rust and Soroban formatting standards (ran `cargo fmt`).
 - [ ] My changes generate no new warnings (ran `cargo clippy`).
 - [ ] I have added/updated tests for the new logic, and all tests pass (ran `cargo test`).
+- [ ] **Traceability Mapping:** I have filled out the mapping table above.
+- [ ] **Reviewer Guidance:** I have reviewed my own changes against the [Reviewer Checklist](../docs/reviewer-checklist.md).
 - [ ] **Compliance & Legal Check:** I have verified that any new documentation or features do not imply regulatory completeness beyond smart contract enforcement, as per the [Legal Boundary Disclaimer](../docs/legal-boundary-disclaimer.md).
 
 ## Additional Context

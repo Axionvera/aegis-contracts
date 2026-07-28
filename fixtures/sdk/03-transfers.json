@@ -1,0 +1,187 @@
+{
+  "$schema_version": 1,
+  "fixture": "03-transfers",
+  "purpose": "Transfer flows and the read-only eligibility helpers that predict them.",
+  "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+  "generator": "tests/sdk_fixtures.rs (cargo test --test sdk_fixtures)",
+  "notes": [
+    "Generated from live contract invocations in the Soroban test host; values are rendered from wire-level ScVal/XDR, never hand-written.",
+    "All addresses are synthetic, derived from SHA-256(\"aegis-fixture/<label>\"). They have no private keys and contain no real user data.",
+    "128-bit and 64-bit integers are encoded as decimal strings to stay lossless in JSON consumers that use IEEE-754 numbers."
+  ],
+  "scenarios": [
+    {
+      "id": "transfer-success-between-whitelisted",
+      "description": "A compliant transfer between two whitelisted investors. Total supply is unchanged — a transfer moves value, it never mints.",
+      "call": "transfer",
+      "args": [
+        "investor_alice",
+        "investor_bob",
+        "250"
+      ],
+      "balances_before": {
+        "investor_alice": "1000",
+        "investor_bob": "0"
+      },
+      "result": {
+        "ok": true
+      },
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "transfer",
+          "topics": [
+            "transfer"
+          ],
+          "data": {
+            "amount": "250",
+            "from": "GAXRVA67D5NLMKP6H5IROF3IY5EMQW6AQBJLTUITGAAZUXMGY7CYO2KG",
+            "to": "GD4YM2BO77TT5BMWZC7SMH74GWZ5TPTKVTGPW5X6VUKFXLLD6W3XPRYN"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAIdHJhbnNmZXIAAAARAAAAAQAAAAMAAAAPAAAABmFtb3VudAAAAAAACgAAAAAAAAAAAAAAAAAAAPoAAAAPAAAABGZyb20AAAASAAAAAAAAAAAvGoPfH1q2Kf4/URcXaMdIyFvAgFK50RMwAZpdhsfFhwAAAA8AAAACdG8AAAAAABIAAAAAAAAAAPmGaC7/5z6Flsi/Jh/8NbPZvmqszPt2/q0UW61j9bd3"
+        }
+      ],
+      "balances_after": {
+        "investor_alice": "750",
+        "investor_bob": "250"
+      },
+      "total_supply_after": "1000"
+    },
+    {
+      "id": "transfer-entire-balance",
+      "description": "Transferring the full balance is allowed and leaves the sender at 0. A zeroed balance is a normal state, not an error.",
+      "call": "transfer",
+      "args": [
+        "investor_alice",
+        "investor_bob",
+        "500"
+      ],
+      "result": {
+        "ok": true
+      },
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "transfer",
+          "topics": [
+            "transfer"
+          ],
+          "data": {
+            "amount": "500",
+            "from": "GAXRVA67D5NLMKP6H5IROF3IY5EMQW6AQBJLTUITGAAZUXMGY7CYO2KG",
+            "to": "GD4YM2BO77TT5BMWZC7SMH74GWZ5TPTKVTGPW5X6VUKFXLLD6W3XPRYN"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAIdHJhbnNmZXIAAAARAAAAAQAAAAMAAAAPAAAABmFtb3VudAAAAAAACgAAAAAAAAAAAAAAAAAAAfQAAAAPAAAABGZyb20AAAASAAAAAAAAAAAvGoPfH1q2Kf4/URcXaMdIyFvAgFK50RMwAZpdhsfFhwAAAA8AAAACdG8AAAAAABIAAAAAAAAAAPmGaC7/5z6Flsi/Jh/8NbPZvmqszPt2/q0UW61j9bd3"
+        }
+      ],
+      "sender_balance_after": "0",
+      "receiver_balance_after": "500"
+    },
+    {
+      "id": "eligibility-whitelisted-holder",
+      "description": "The aggregated eligibility read for a compliant holder with a balance. `remaining_capacity` is null when no holding cap is active.",
+      "call": "get_investor_eligibility",
+      "args": [
+        "investor_alice"
+      ],
+      "returns": {
+        "asset_status": [
+          "Active"
+        ],
+        "balance": "1000",
+        "can_receive": true,
+        "can_send": true,
+        "contract_paused": false,
+        "holding_cap": "0",
+        "remaining_capacity": null,
+        "whitelisted": true
+      }
+    },
+    {
+      "id": "eligibility-non-whitelisted",
+      "description": "A non-whitelisted address: both `can_send` and `can_receive` are false. SDKs should route this user into the KYC flow rather than letting them build a transaction that will revert with 4000/4001.",
+      "call": "get_investor_eligibility",
+      "args": [
+        "outsider_dave"
+      ],
+      "returns": {
+        "asset_status": [
+          "Active"
+        ],
+        "balance": "0",
+        "can_receive": false,
+        "can_send": false,
+        "contract_paused": false,
+        "holding_cap": "0",
+        "remaining_capacity": null,
+        "whitelisted": false
+      }
+    },
+    {
+      "id": "eligibility-with-holding-cap-headroom",
+      "description": "With a 1000 holding cap and a 600 balance, `remaining_capacity` is 400. SDKs should use this to cap the amount field in a deposit form.",
+      "holding_cap": "1000",
+      "call": "get_investor_eligibility",
+      "args": [
+        "investor_alice"
+      ],
+      "returns": {
+        "asset_status": [
+          "Active"
+        ],
+        "balance": "600",
+        "can_receive": true,
+        "can_send": true,
+        "contract_paused": false,
+        "holding_cap": "1000",
+        "remaining_capacity": "400",
+        "whitelisted": true
+      }
+    },
+    {
+      "id": "check-transfer-eligibility-matrix",
+      "description": "The pre-flight transfer check across boundary amounts and compliance states. This is a point-in-time read: state can change before the transfer is submitted, so SDKs must still handle a revert.",
+      "call": "check_transfer_eligibility",
+      "sender_balance": "1000",
+      "cases": [
+        {
+          "case": "within balance",
+          "amount": "250",
+          "returns": true
+        },
+        {
+          "case": "exactly the full balance",
+          "amount": "1000",
+          "returns": true
+        },
+        {
+          "case": "above balance",
+          "amount": "1001",
+          "returns": false
+        },
+        {
+          "case": "zero amount is rejected",
+          "amount": "0",
+          "returns": false
+        },
+        {
+          "case": "negative amount is rejected",
+          "amount": "-1",
+          "returns": false
+        },
+        {
+          "case": "receiver not whitelisted",
+          "amount": "100",
+          "returns": false
+        },
+        {
+          "case": "sender not whitelisted",
+          "amount": "100",
+          "returns": false
+        }
+      ]
+    }
+  ]
+}

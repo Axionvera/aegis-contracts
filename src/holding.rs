@@ -1,4 +1,10 @@
-use soroban_sdk::{contractimpl, contracttype, Address, Env};
+
+// The legacy `Events::publish((topic,), payload)` API is used intentionally:
+// docs/events.md freezes these (topic, payload) shapes as a stable off-chain
+// contract, and src/test.rs asserts them exactly. Migrating to the
+// `#[contractevent]` macro must preserve every emitted shape byte-for-byte.
+use soroban_sdk::{contractimpl, contracttype, panic_with_error, Address, Env};
+
 
 use crate::admin::{get_admin, require_not_paused};
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error};
@@ -65,10 +71,27 @@ pub fn enforce_holding_cap(env: &Env, address: &Address, incoming: i128) -> Resu
         .persistent()
         .get(&DataKey::Balance(address.clone()))
         .unwrap_or(0);
+
     if balance + incoming > cap {
         return Err(Error::HoldingCapExceeded);
     }
     Ok(())
+
+    // Overflow-safe check: if balance already exceeds cap, any positive incoming fails.
+    if balance > cap {
+        panic_with_error!(env, Error::HoldingCapExceeded);
+    }
+    let new_balance = match balance.checked_add(incoming) {
+        Some(val) => val,
+        None => {
+            // Addition overflow implies it exceeds any valid cap.
+            panic_with_error!(env, Error::HoldingCapExceeded);
+        }
+    };
+    if new_balance > cap {
+        panic_with_error!(env, Error::HoldingCapExceeded);
+    }
+
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────

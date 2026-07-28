@@ -1,12 +1,7 @@
-# ─── Aegis RWA Contracts — Makefile ───────────────────────────────────────────
-#
-# Every target below is documented in docs/local-deployment.md.
-# Run `make help` for a self-documenting list of targets.
-#
-# Configuration is driven by environment variables, all of which can be set in
-# a local `.env` file (copy `.env.example` -> `.env`). See docs/local-deployment.md
-# for the full reference of each variable.
-# ──────────────────────────────────────────────────────────────────────────────
+default: build
+
+
+build:
 
 # Load .env if present so `make deploy` etc. pick up local configuration.
 # `-include` does not fail when the file is missing.
@@ -46,7 +41,7 @@ DEPLOY_OUT       := .aegis-deploy
 .DEFAULT_GOAL := help
 .PHONY: help build build-legacy test test-verbose fmt fmt-check clippy clean \
         optimize check-cli check-target deploy initialize invoke-status \
-        network-up network-down network-add fund verify all ci
+        network-up network-down network-add fund verify verify-interface all ci
 
 # ─── Help ─────────────────────────────────────────────────────────────────────
 
@@ -87,26 +82,27 @@ build-legacy:
 	@echo "WARNING: 'wasm32-unknown-unknown' is only supported on Rust 1.81 and"
 	@echo "         earlier. On newer toolchains soroban-sdk aborts the build."
 	@echo "         Prefer 'make build' (target wasm32v1-none)."
+
 	cargo build --target wasm32-unknown-unknown --release
+	@echo "Build successful. WASM located in target/wasm32-unknown-unknown/release/"
 
-## optimize: Build then shrink the WASM with the Stellar CLI.
-optimize: check-cli build
-	$(STELLAR) contract optimize --wasm $(WASM)
-	@echo "Optimized WASM at $(WASM_OPTIMIZED)"
-
-# ─── Test / quality ───────────────────────────────────────────────────────────
-
-## test: Run the full unit test suite (native target, no wasm needed).
 test:
 	cargo test
 
-## test-verbose: Run tests with captured stdout shown.
-test-verbose:
-	cargo test -- --nocapture
+# Verify the committed SDK integration fixtures still match live contract
+# behaviour. Fails on drift; see docs/sdk-fixtures.md.
+test-fixtures:
+	cargo test --test sdk_fixtures
 
-## fmt: Format all Rust sources in place.
+# Regenerate the committed fixtures after an intentional contract change.
+# Review the resulting diff before committing.
+update-fixtures:
+	UPDATE_FIXTURES=1 cargo test --test sdk_fixtures
+	@echo "Fixtures regenerated in fixtures/sdk/. Review the diff before committing."
+
 fmt:
 	cargo fmt --all
+
 
 ## fmt-check: Fail if any source file is not correctly formatted.
 fmt-check:
@@ -119,87 +115,30 @@ clippy:
 ## ci: Run the checks CI enforces (fmt-check + clippy + test + build).
 ci: fmt-check clippy test build
 
+## verify: Single local gate contributors should run before pushing.
+#   Runs formatting check, lint, the test suite, and a release build in one
+#   command. This is the recommended pre-push check to avoid failing CI.
+#   (clippy is skipped if the toolchain lacks it; build/test still run.)
+verify: fmt-check clippy test build
+	@echo ""
+	@echo "Local verification passed: fmt-check + clippy + test + build."
+
 ## all: Format, test, and build.
 all: fmt test build
 
 ## clean: Remove build artifacts and local deploy state.
+
 clean:
 	cargo clean
-	@rm -f $(DEPLOY_OUT)
 
-# ─── Local network ────────────────────────────────────────────────────────────
+optimize: build
+	soroban contract optimize --wasm target/wasm32-unknown-unknown/release/aegis_contracts.wasm
 
-## check-cli: Verify the Stellar CLI is installed and on PATH.
-check-cli:
-	@command -v $(STELLAR) >/dev/null 2>&1 || { \
-		echo "ERROR: '$(STELLAR)' not found on PATH."; \
-		echo "Fix:   cargo install --locked stellar-cli"; \
-		echo "       (or set STELLAR=soroban if you use the legacy binary)"; \
-		exit 1; }
 
-## network-up: Start a local Stellar network in Docker (quickstart image).
-network-up: check-cli
-	$(STELLAR) container start local
-	@echo "Local network starting. Health: curl $(RPC_URL) -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"getHealth\"}' -H 'Content-Type: application/json'"
+.PHONY: default build test test-fixtures update-fixtures fmt clean optimize
 
-## network-down: Stop the local Stellar network container.
-network-down: check-cli
-	$(STELLAR) container stop local
-
-## network-add: Register the 'local' network in the Stellar CLI config.
-network-add: check-cli
-	$(STELLAR) network add $(NETWORK) \
-		--rpc-url "$(RPC_URL)" \
-		--network-passphrase "$(NETWORK_PASSPHRASE)"
-
-## fund: Create (if needed) and fund SOURCE_ACCOUNT on NETWORK.
-fund: check-cli
-	@$(STELLAR) keys address $(SOURCE_ACCOUNT) >/dev/null 2>&1 \
-		|| $(STELLAR) keys generate --global $(SOURCE_ACCOUNT) --network $(NETWORK)
-	$(STELLAR) keys fund $(SOURCE_ACCOUNT) --network $(NETWORK)
-	@echo "Funded: $$($(STELLAR) keys address $(SOURCE_ACCOUNT))"
-
-# ─── Deploy / invoke ──────────────────────────────────────────────────────────
-
-## deploy: Deploy the built WASM to NETWORK; writes the id to .aegis-deploy.
-deploy: check-cli build
-	@$(STELLAR) contract deploy \
-		--wasm $(WASM) \
-		--source-account $(SOURCE_ACCOUNT) \
-		--network $(NETWORK) \
-		| tee $(DEPLOY_OUT)
-	@echo ""
-	@echo "Contract deployed. Id saved to $(DEPLOY_OUT)."
-	@echo "Next: make initialize CONTRACT_ID=$$(cat $(DEPLOY_OUT))"
-
-## initialize: Call initialize(admin) on the deployed contract.
-initialize: check-cli
-	@test -n "$(CONTRACT_ID)" || { \
-		echo "ERROR: CONTRACT_ID is not set."; \
-		echo "Fix:   make initialize CONTRACT_ID=\$$(cat $(DEPLOY_OUT))"; exit 1; }
-	@test -n "$(ADMIN_ADDRESS)" || { \
-		echo "ERROR: ADMIN_ADDRESS is not set."; \
-		echo "Fix:   make initialize CONTRACT_ID=... ADMIN_ADDRESS=\$$($(STELLAR) keys address $(SOURCE_ACCOUNT))"; exit 1; }
-	$(STELLAR) contract invoke \
-		--id $(CONTRACT_ID) \
-		--source-account $(SOURCE_ACCOUNT) \
-		--network $(NETWORK) \
-		-- initialize --admin $(ADMIN_ADDRESS)
-
-## invoke-status: Read back core state (supply, pause, asset status).
-invoke-status: check-cli
-	@test -n "$(CONTRACT_ID)" || { echo "ERROR: CONTRACT_ID is not set."; exit 1; }
-	@echo "total_supply:"
-	@$(STELLAR) contract invoke --id $(CONTRACT_ID) --source-account $(SOURCE_ACCOUNT) \
-		--network $(NETWORK) -- get_total_supply
-	@echo "is_paused:"
-	@$(STELLAR) contract invoke --id $(CONTRACT_ID) --source-account $(SOURCE_ACCOUNT) \
-		--network $(NETWORK) -- is_paused
-	@echo "asset_status:"
-	@$(STELLAR) contract invoke --id $(CONTRACT_ID) --source-account $(SOURCE_ACCOUNT) \
-		--network $(NETWORK) -- get_asset_status
-
-## verify: Print the deployed contract's interface from the network.
-verify: check-cli
+## verify-interface: Print the deployed contract's interface from the network.
+verify-interface: check-cli
 	@test -n "$(CONTRACT_ID)" || { echo "ERROR: CONTRACT_ID is not set."; exit 1; }
 	$(STELLAR) contract info interface --id $(CONTRACT_ID) --network $(NETWORK)
+

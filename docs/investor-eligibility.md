@@ -33,6 +33,7 @@ Returns an aggregated eligibility snapshot for a single address.
 ```rust
 pub struct InvestorEligibility {
     pub whitelisted: bool,
+    pub compliance_status: ComplianceStatus,
     pub contract_paused: bool,
     pub balance: i128,
     pub holding_cap: i128,
@@ -44,7 +45,8 @@ pub struct InvestorEligibility {
 
 | Field | Meaning |
 | --- | --- |
-| `whitelisted` | Compliance status — whether the address is on the KYC whitelist ([`docs/error-codes.md`](error-codes.md) 4000/4001 range). |
+| `whitelisted` | Whether the address is compliance-**approved**. Derived: `true` only when `compliance_status == Approved`. |
+| `compliance_status` | The full lifecycle state — `Unknown`, `Pending`, `Approved`, `Revoked`, or `Blocked`. Prefer this over `whitelisted`: it distinguishes "never onboarded" from "under review" from "sanctioned", which map to different user-facing actions. See [`compliance-lifecycle.md`](compliance-lifecycle.md). |
 | `contract_paused` | Whether the contract is currently paused. When `true`, no mint or transfer can succeed, regardless of the other fields. |
 | `balance` | The investor's current token balance — for portfolio display. |
 | `holding_cap` | The active global per-investor holding cap. `0` means unrestricted (see [`docs/investor-holding-restrictions.md`](investor-holding-restrictions.md)). |
@@ -60,10 +62,11 @@ mutating transaction:
 
 1. `amount > 0`
 2. Contract is not paused
-3. `from` is whitelisted
-4. `to` is whitelisted
-5. `from`'s balance is `>= amount`
-6. `to`'s resulting balance (`balance + amount`) does not exceed the active holding cap (skipped when the cap is `0`)
+3. The asset lifecycle status is `Active`
+4. `from`'s compliance status is `Approved`
+5. `to`'s compliance status is `Approved`
+6. `from`'s balance is `>= amount`
+7. `to`'s resulting balance (`balance + amount`) does not exceed the active holding cap (skipped when the cap is `0`)
 
 This mirrors the exact order and conditions enforced in `asset.rs::transfer`,
 so a `true` result and a subsequent `transfer` call are checking the same
@@ -105,7 +108,8 @@ actual `mint_asset`/`transfer` call.
 ## Compatibility
 
 - Reuses existing internal helpers with no behavior change to any
-  state-changing function: `compliance::is_whitelisted`,
+  state-changing function: `compliance::get_compliance_status`,
+  `compliance::is_whitelisted`, `asset::get_asset_status_internal`,
   `holding::get_holding_cap`, `admin::is_paused`, and the same
   `DataKey::Balance` read as `get_balance_of`.
 - Introduces no new storage keys, no new error codes, and no new events —

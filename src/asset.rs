@@ -1,9 +1,18 @@
+// The legacy `Events::publish((topic,), payload)` API is used intentionally:
+// docs/events.md freezes these (topic, payload) shapes as a stable off-chain
+// contract, and src/test.rs asserts them exactly. Migrating to the
+// `#[contractevent]` macro must preserve every emitted shape byte-for-byte.
+#![allow(deprecated)]
 use soroban_sdk::{contractimpl, contracttype, Address, Env, String};
 
-use crate::admin::{require_any_role, require_not_paused, require_role};
+use crate::admin::{require_not_paused, require_role};
 use crate::compliance;
 use crate::holding;
+
 use crate::restrictions::{asset_status_reason, error_for_reason, RestrictionReason};
+
+use crate::lifecycle::{get_asset_status, require_asset_operable, AssetStatus};
+
 use crate::supply_cap;
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error, Role};
 
@@ -47,27 +56,10 @@ pub struct YieldDistributedEvent {
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum AssetStatus {
-    Active,
-    Paused,
-    Retired,
-    Blocked,
-}
-
-#[contracttype]
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AssetMetadata {
     pub name: String,
     pub symbol: String,
     pub uri: String,
-}
-
-#[contracttype]
-#[derive(Clone, Debug)]
-pub struct AssetStatusChangedEvent {
-    pub caller: Address,
-    pub previous_status: AssetStatus,
-    pub new_status: AssetStatus,
 }
 
 #[contracttype]
@@ -78,6 +70,7 @@ pub struct AssetMetadataUpdatedEvent {
     pub symbol: String,
     pub uri: String,
 }
+
 
 /// Returns the current asset lifecycle status, defaulting to `Active` when
 /// none has been recorded. Pure read — shared with the capability module so
@@ -112,6 +105,7 @@ fn transition_is_valid(from: &AssetStatus, to: &AssetStatus) -> bool {
     }
 }
 
+
 /// Asserts that the asset lifecycle status currently permits value movement
 /// (mint or transfer).
 ///
@@ -133,44 +127,11 @@ pub fn require_asset_movable(env: &Env) -> Result<(), Error> {
     }
 }
 
+
+n
+
 #[contractimpl]
 impl AegisContract {
-    /// Returns the current lifecycle status for the asset (`Active` by default).
-    pub fn get_asset_status(env: Env) -> AssetStatus {
-        get_asset_status_internal(&env)
-    }
-
-    /// Updates asset lifecycle status.
-    /// Requires EmergencyOfficer role or Admin.
-    pub fn set_asset_status(
-        env: Env,
-        caller: Address,
-        new_status: AssetStatus,
-    ) -> Result<(), Error> {
-        caller.require_auth();
-        require_any_role(&env, &caller, &[Role::EmergencyOfficer]);
-
-        let current = get_asset_status_internal(&env);
-        if !transition_is_valid(&current, &new_status) {
-            return Err(Error::InvalidAssetStatusTransition);
-        }
-
-        env.storage()
-            .instance()
-            .set(&DataKey::AssetStatus, &new_status);
-
-        env.events().publish(
-            ("asset_status_changed",),
-            AssetStatusChangedEvent {
-                caller,
-                previous_status: current,
-                new_status,
-            },
-        );
-
-        Ok(())
-    }
-
     /// Returns the current metadata snapshot for the asset.
     pub fn get_asset_metadata(env: Env) -> AssetMetadata {
         AssetMetadata {
@@ -206,7 +167,7 @@ impl AegisContract {
         caller.require_auth();
         require_role(&env, &caller, Role::AssetManager);
 
-        let status = get_asset_status_internal(&env);
+        let status = get_asset_status(&env);
         if matches!(status, AssetStatus::Retired | AssetStatus::Blocked) {
             return Err(Error::AssetMetadataUpdateBlocked);
         }
@@ -237,17 +198,21 @@ impl AegisContract {
         require_not_paused(&env);
         admin.require_auth();
         require_role(&env, &admin, Role::AssetManager);
+        require_asset_operable(&env);
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
+
         // Resolve the asset lifecycle state into a *specific* restriction
         // reason (paused / retired / blocked) rather than the generic
         // `AssetNotActive`, so clients can explain the block precisely.
         require_asset_movable(&env)?;
 
-        if !compliance::is_whitelisted(&env, &to) {
-            return Err(Error::ReceiverNotWhitelisted);
-        }
+        // Consume the compliance lifecycle state: only an `Approved` receiver
+        // may be credited. `Blocked` and `Pending` return their own error
+        // codes so a client can distinguish a sanctions freeze from an
+        // in-flight KYC review. See `docs/compliance-lifecycle.md`.
+        compliance::require_can_receive(&env, &to)?;
 
         // Enforce the active supply cap before increasing total supply.
         // This is a compliance-sensitive control: it must run even for the
@@ -257,7 +222,11 @@ impl AegisContract {
         // Enforce the per-investor holding cap before crediting the receiver.
         // This is a compliance-sensitive control that applies to every mint,
         // including those performed by the admin/AssetManager.
+
         holding::enforce_holding_cap(&env, &to, amount)?;
+
+        holding::enforce_holding_cap(&env, &to, amount);
+
 
         let mut balance: i128 = env
             .storage()
@@ -295,17 +264,19 @@ impl AegisContract {
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) -> Result<(), Error> {
         require_not_paused(&env);
         from.require_auth();
+        require_asset_operable(&env);
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
+
         require_asset_movable(&env)?;
 
-        if !compliance::is_whitelisted(&env, &from) {
-            return Err(Error::SenderNotWhitelisted);
-        }
-        if !compliance::is_whitelisted(&env, &to) {
-            return Err(Error::ReceiverNotWhitelisted);
-        }
+
+        // Both parties must be `Approved` under the compliance lifecycle.
+        // Sender is checked first so a blocked/pending sender is reported
+        // even when the receiver is also ineligible.
+        compliance::require_can_send(&env, &from)?;
+        compliance::require_can_receive(&env, &to)?;
 
         // Enforce the per-investor holding cap before crediting the receiver.
         // Applies uniformly to transfers, so no investor can be credited

@@ -6,7 +6,11 @@ pub mod compliance;
 pub mod eligibility;
 pub mod errors;
 pub mod holding;
+
 pub mod restrictions;
+
+pub mod lifecycle;
+
 pub mod supply_cap;
 #[cfg(test)]
 mod test;
@@ -14,6 +18,18 @@ mod test;
 use soroban_sdk::{contract, contractimpl, contracttype, Address, Env};
 
 pub use errors::Error;
+pub use lifecycle::AssetStatus;
+
+// ─── Events ───────────────────────────────────────────────────────────────────
+
+/// Emitted once when the contract is first initialized. Records the initial
+/// admin address so that the complete audit trail of role changes starts at
+/// deployment time, not at the first explicit `set_role` call.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct ContractInitializedEvent {
+    pub admin: Address,
+}
 
 /// Role-based access control levels.
 /// Admin is the supreme authority; other roles grant scoped privileges.
@@ -43,7 +59,15 @@ pub enum DataKey {
     /// The role assigned to a specific address.
     Role(Address),
     /// Legacy whitelist flag (kept for backwards compatibility).
+    ///
+    /// Written only by the compliance lifecycle writer as a derived mirror of
+    /// `ComplianceStatus(Address)`: present and `true` iff the address's
+    /// lifecycle status is `Approved`. Never the source of truth — read
+    /// `ComplianceStatus` instead. See `docs/compliance-lifecycle.md`.
     Whitelist(Address),
+    /// Full compliance lifecycle status for an investor address. Absent means
+    /// `ComplianceStatus::Unknown` (the safe default: nothing is permitted).
+    ComplianceStatus(Address),
     /// Token balance for an address.
     Balance(Address),
     /// Global total supply counter.
@@ -61,7 +85,8 @@ pub enum DataKey {
     HoldingCap,
     /// The pending (proposed) holding cap awaiting 2-step acceptance.
     HoldingCapCandidate,
-    /// Current lifecycle status for the issued asset.
+    /// The lifecycle status of this asset (Draft, Active, Paused, Retired,
+    /// Blocked). Defaults to `Draft` when not set.
     AssetStatus,
     /// Display name for the issued asset.
     AssetName,
@@ -78,6 +103,9 @@ pub struct AegisContract;
 impl AegisContract {
     /// Initializes the contract with an admin. Can only be called once.
     /// The initial admin is assigned the Admin role implicitly.
+    ///
+    /// Emits a `contract_initialized` event recording the initial admin so
+    /// the audit trail of role changes starts at deployment time.
     pub fn initialize(env: Env, admin: Address) -> Result<(), Error> {
         if env.storage().instance().has(&DataKey::Admin) {
             return Err(Error::AlreadyInitialized);
@@ -87,7 +115,13 @@ impl AegisContract {
         // Grant the Admin role to the initial admin.
         env.storage()
             .persistent()
-            .set(&DataKey::Role(admin), &Role::Admin);
+            .set(&DataKey::Role(admin.clone()), &Role::Admin);
+
+        env.events().publish(
+            ("contract_initialized",),
+            ContractInitializedEvent { admin },
+        );
+
         Ok(())
     }
 
