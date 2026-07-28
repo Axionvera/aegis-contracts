@@ -29,6 +29,7 @@ Run the comprehensive test suite locally:
 - [Emergency Pause Policy](docs/emergency-pause.md) — global pause mechanism, authorization, and trust model
 - [Admin Roles & Permissions](docs/admin-roles.md) — role-based access control (RBAC) design
 - [Admin Misuse Risks](docs/admin-misuse-risks.md) — threat model and mitigations
+- [Supply Cap Amendment Governance](docs/supply-cap-governance.md) — 2-step cap amendment workflow and enforcement
 
 ## Errors
 

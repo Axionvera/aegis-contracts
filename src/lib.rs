@@ -4,6 +4,7 @@ pub mod admin;
 pub mod asset;
 pub mod compliance;
 pub mod errors;
+pub mod supply_cap;
 #[cfg(test)]
 mod test;
 
@@ -47,6 +48,11 @@ pub enum DataKey {
     /// Whether the contract is paused. If `true`, all state-changing
     /// operations (minting, transfers, compliance) are blocked.
     Paused,
+    /// The currently active global supply cap. A value of `0` means
+    /// "no cap enforced" (unbounded minting, subject to whitelist).
+    SupplyCap,
+    /// The pending (proposed) supply cap awaiting 2-step acceptance.
+    SupplyCapCandidate,
 }
 
 #[contract]

@@ -2,6 +2,7 @@ use soroban_sdk::{contractimpl, Address, Env};
 
 use crate::admin::{require_not_paused, require_role};
 use crate::compliance;
+use crate::supply_cap;
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error, Role};
 
 #[contractimpl]
@@ -20,6 +21,12 @@ impl AegisContract {
         if !compliance::is_whitelisted(&env, &to) {
             return Err(Error::ReceiverNotWhitelisted);
         }
+
+        // Enforce the active supply cap before increasing total supply.
+        // This is a compliance-sensitive control: it must run even for the
+        // admin/AssetManager, since the cap is a protocol-level invariant.
+        supply_cap::enforce_supply_cap(&env, amount);
+
 
         let mut balance: i128 = env
             .storage()
