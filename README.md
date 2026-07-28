@@ -83,6 +83,7 @@ Every target honours the variables in `.env` and accepts inline overrides, e.g.
 ## Errors
 
 - [Contract Error Code Standard](docs/error-codes.md) — standardized error codes for compliance, admin, minting, transfer, and storage failures, plus SDK/dashboard mapping guidance
+- [Transfer Restriction Reason Codes](docs/transfer-restrictions.md) — granular blocked-transfer reasons (non-compliant sender/recipient, paused/retired/blocked asset, cap breaches, unauthorised operation), pre-flight reason reads, and the SDK/dashboard mapping contract
 
 - [Investor Holding Restriction Checks](docs/investor-holding-restrictions.md) — per-investor holding cap workflow and enforcement
 

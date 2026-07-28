@@ -1,7 +1,7 @@
 use soroban_sdk::{contractimpl, contracttype, Address, Env};
 
 use crate::admin::{get_admin, require_not_paused};
-use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey};
+use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error};
 
 // ─── Events ───────────────────────────────────────────────────────────────────
 
@@ -38,15 +38,15 @@ pub fn get_holding_cap(env: &Env) -> i128 {
 /// Returns the pending proposed holding cap, or `None` if no proposal is
 /// outstanding.
 pub fn get_pending_holding_cap(env: &Env) -> Option<i128> {
-    env.storage()
-        .instance()
-        .get(&DataKey::HoldingCapCandidate)
+    env.storage().instance().get(&DataKey::HoldingCapCandidate)
 }
 
 /// Enforces the per-investor holding cap after `address` is credited with
 /// `incoming` tokens.
 ///
-/// Reverts if a cap is set (`> 0`) and the resulting balance would exceed it.
+/// Returns `Err(Error::HoldingCapExceeded)` (code 7003) if a cap is set (`> 0`)
+/// and the resulting balance would exceed it, so callers surface a specific
+/// restriction reason instead of a generic host panic.
 /// A cap of `0` is treated as "unrestricted" and never blocks. The check is
 /// performed on the *resulting* balance so it applies uniformly to both
 /// minting (crediting a new holder) and transfers (crediting a receiver).
@@ -55,20 +55,20 @@ pub fn get_pending_holding_cap(env: &Env) -> Option<i128> {
 /// retroactively clamp existing balances; if the cap is lowered below a
 /// holder's current balance, that holder simply cannot receive further
 /// tokens until their balance falls (via transfers out) or the cap is raised.
-pub fn enforce_holding_cap(env: &Env, address: &Address, incoming: i128) {
+pub fn enforce_holding_cap(env: &Env, address: &Address, incoming: i128) -> Result<(), Error> {
     let cap = get_holding_cap(env);
     if cap <= 0 {
-        return;
+        return Ok(());
     }
     let balance: i128 = env
         .storage()
         .persistent()
         .get(&DataKey::Balance(address.clone()))
         .unwrap_or(0);
-    assert!(
-        balance + incoming <= cap,
-        "Transfer would exceed the investor holding cap"
-    );
+    if balance + incoming > cap {
+        return Err(Error::HoldingCapExceeded);
+    }
+    Ok(())
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -145,8 +145,12 @@ impl AegisContract {
 
         let previous = get_holding_cap(&env);
 
-        env.storage().instance().remove(&DataKey::HoldingCapCandidate);
-        env.storage().instance().set(&DataKey::HoldingCap, &proposed);
+        env.storage()
+            .instance()
+            .remove(&DataKey::HoldingCapCandidate);
+        env.storage()
+            .instance()
+            .set(&DataKey::HoldingCap, &proposed);
 
         env.events().publish(
             ("holding_cap_amended",),
@@ -174,6 +178,8 @@ impl AegisContract {
         let had = env.storage().instance().has(&DataKey::HoldingCapCandidate);
         assert!(had, "No pending holding cap proposal to cancel");
 
-        env.storage().instance().remove(&DataKey::HoldingCapCandidate);
+        env.storage()
+            .instance()
+            .remove(&DataKey::HoldingCapCandidate);
     }
 }

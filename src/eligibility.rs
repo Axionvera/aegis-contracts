@@ -81,42 +81,13 @@ pub fn get_investor_eligibility(env: &Env, investor: &Address) -> InvestorEligib
 /// holding cap, and pause state can all change between this call and a
 /// subsequent `transfer` submission, so callers must still be prepared to
 /// handle a revert.
+///
+/// Delegates to `restrictions::evaluate_transfer` so this boolean verdict can
+/// never disagree with the reason code reported by
+/// `check_transfer_restriction`. Callers that need to *explain* a `false`
+/// should use that entrypoint instead — see `docs/transfer-restrictions.md`.
 pub fn check_transfer_eligibility(env: &Env, from: &Address, to: &Address, amount: i128) -> bool {
-    if amount <= 0 {
-        return false;
-    }
-    if is_paused(env) {
-        return false;
-    }
-    if !is_whitelisted(env, from) {
-        return false;
-    }
-    if !is_whitelisted(env, to) {
-        return false;
-    }
-
-    let from_balance: i128 = env
-        .storage()
-        .persistent()
-        .get(&DataKey::Balance(from.clone()))
-        .unwrap_or(0);
-    if from_balance < amount {
-        return false;
-    }
-
-    let cap = get_holding_cap(env);
-    if cap > 0 {
-        let to_balance: i128 = env
-            .storage()
-            .persistent()
-            .get(&DataKey::Balance(to.clone()))
-            .unwrap_or(0);
-        if to_balance + amount > cap {
-            return false;
-        }
-    }
-
-    true
+    !crate::restrictions::evaluate_transfer(env, from, to, amount).is_blocked()
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────

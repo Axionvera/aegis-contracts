@@ -30,7 +30,8 @@ variants can be added to a category without renumbering any other category.
 | 3000–3999   | Admin & Authorization     | Role checks, admin transfer, pause/unpause           |
 | 4000–4999   | Compliance                | Whitelist checks on transfer/mint participants       |
 | 5000–5999   | Minting & Transfers       | Amount and balance validation                        |
-| 6000–6999   | Asset Metadata            | Reserved for a future asset-metadata module          |
+| 6000–6999   | Asset Metadata            | Asset lifecycle/metadata validation                  |
+| 7000–7999   | Transfer Restrictions     | Granular reasons a transfer or mint was blocked      |
 
 ## Codes
 
@@ -50,6 +51,19 @@ variants can be added to a category without renumbering any other category.
 | 4001 | `ReceiverNotWhitelisted` | Compliance     | The receiving address is not on the compliance whitelist.            |
 | 5000 | `InvalidAmount`          | Minting/Transfer | The requested amount was not strictly greater than zero.           |
 | 5001 | `InsufficientBalance`    | Minting/Transfer | The sender's balance cannot cover the requested transfer amount.   |
+| 6000 | `AssetNotActive`         | Asset Metadata | **Reserved.** Superseded by `7000`–`7002`; no longer emitted by `transfer`/`mint_asset`. |
+| 6001 | `InvalidAssetStatusTransition` | Asset Metadata | The requested lifecycle transition is not permitted.         |
+| 6002 | `AssetMetadataUpdateBlocked`   | Asset Metadata | Metadata cannot be updated in a terminal lifecycle status.   |
+| 7000 | `AssetPausedRestriction` | Transfer Restriction | Asset lifecycle status is `Paused` — movements temporarily suspended. |
+| 7001 | `AssetRetiredRestriction`| Transfer Restriction | Asset lifecycle status is `Retired` — terminal, never resumes. |
+| 7002 | `AssetBlockedRestriction`| Transfer Restriction | Asset lifecycle status is `Blocked` — administrative hold.     |
+| 7003 | `HoldingCapExceeded`     | Transfer Restriction | Crediting the recipient would breach the per-investor holding cap. |
+| 7004 | `SupplyCapExceeded`      | Transfer Restriction | The mint would breach the global supply cap.                   |
+
+Codes `3000`, `3004`, `4000`, `4001`, `5000`, `5001`, and `7000`–`7004` are the
+**transfer restriction** surface: each maps 1:1 onto a `RestrictionReason` and
+has recommended user-facing copy in
+[Transfer Restriction Reason Codes](transfer-restrictions.md).
 
 ## SDK mapping guidance
 
@@ -71,18 +85,34 @@ variants can be added to a category without renumbering any other category.
      than showing a raw error.
    - `5000` → "Enter an amount greater than zero."
    - `5001` → "Insufficient balance for this transfer."
+   - `7000` → "Transfers of this asset are temporarily suspended." (retryable)
+   - `7001` → "This asset has been retired and can no longer be
+     transferred." This is terminal — do **not** offer a retry.
+   - `7002` → "Transfers of this asset are on hold pending issuer review."
+   - `7003`/`7004` → "This would exceed the permitted holding / maximum
+     supply." Show the remaining capacity alongside the message.
    - `1000`/`2000`/`2001` → these indicate integration or environment bugs
      (calling the contract in the wrong state), not user error. Log them
      and surface a generic "Something went wrong" message rather than
      asking the user to retry.
 4. **Unknown codes must fail safe.** Any code not in this table (including
-   future additions in the `6000` Asset Metadata range) should render as a
+   future additions in the `6000` and `7000` ranges) should render as a
    generic "Transaction failed" message rather than crashing the client.
    Treat the table as additive/versioned — new codes may appear in future
    contract versions without any existing code changing meaning.
 5. **Dashboards** should surface the raw numeric code alongside the mapped
    message (e.g. in an expandable "details" section) so support staff can
    cross-reference this document without needing contract source access.
+
+## Blocked transfers
+
+For the specific question "why was this transfer or mint rejected?", see
+[Transfer Restriction Reason Codes](transfer-restrictions.md). It defines the
+`RestrictionReason` enum, the pre-flight `check_transfer_restriction` /
+`check_mint_restriction` entrypoints, check-order precedence, and the full
+client mapping table. Because Soroban discards events from reverted
+invocations, the numeric error code is the **only** off-chain-observable signal
+for a blocked transfer.
 
 ## Adding a new error
 

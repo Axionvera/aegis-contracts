@@ -16,7 +16,7 @@ use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey};
 /// does not know about. Fields are append-only: never remove or repurpose an
 /// existing field or key (same stability contract as `docs/events.md` topics
 /// and `docs/error-codes.md` numeric codes).
-pub const CAPABILITY_SCHEMA_VERSION: u32 = 1;
+pub const CAPABILITY_SCHEMA_VERSION: u32 = 2;
 
 // ─── Response types ───────────────────────────────────────────────────────────
 
@@ -109,6 +109,11 @@ pub struct TransferCapabilities {
     pub transfer_fees: CapabilityStatus,
     /// Pre-flight transfer simulation (`check_transfer_eligibility`).
     pub transfer_eligibility_check: CapabilityStatus,
+    /// Granular blocked-transfer reason codes
+    /// (`check_transfer_restriction` / `check_mint_restriction`), returning a
+    /// specific `RestrictionReason` instead of a generic failure. See
+    /// `docs/transfer-restrictions.md`.
+    pub transfer_restriction_reasons: CapabilityStatus,
 }
 
 /// Pause and asset-lifecycle capabilities (`admin.rs`, `asset.rs`).
@@ -175,7 +180,9 @@ pub struct EventCapabilities {
     pub asset_lifecycle_events: CapabilityStatus,
     /// A durable event for a *blocked* transfer. Structurally impossible:
     /// Soroban discards events from reverted invocations, so indexers must
-    /// watch error codes `3004` / `4000` / `4001` instead.
+    /// watch the granular restriction error codes (`3004`, `4000`, `4001`,
+    /// `7000`–`7004`) instead — see `transfer_restriction_reasons` and
+    /// `docs/transfer-restrictions.md`.
     pub transfer_restriction_events: CapabilityStatus,
     /// A dedicated `asset_registered` event, distinct from the first
     /// `asset_minted` to a holder.
@@ -320,6 +327,7 @@ pub fn get_capabilities(env: &Env) -> ContractCapabilities {
             transfer_from: CapabilityStatus::Planned,
             transfer_fees: CapabilityStatus::Planned,
             transfer_eligibility_check: CapabilityStatus::Supported,
+            transfer_restriction_reasons: CapabilityStatus::Supported,
         },
 
         pause: PauseCapabilities {
@@ -432,6 +440,9 @@ pub fn supports_capability(env: &Env, capability: &Symbol) -> CapabilityStatus {
     if *capability == Symbol::new(env, "transfer_eligibility") {
         return caps.transfers.transfer_eligibility_check;
     }
+    if *capability == Symbol::new(env, "transfer_restriction_reasons") {
+        return caps.transfers.transfer_restriction_reasons;
+    }
 
     // ── Pause & lifecycle ──
     if *capability == Symbol::new(env, "pause") {
@@ -494,6 +505,7 @@ pub fn get_capability_keys(env: &Env) -> Vec<Symbol> {
         Symbol::new(env, "transfer_from"),
         Symbol::new(env, "transfer_fees"),
         Symbol::new(env, "transfer_eligibility"),
+        Symbol::new(env, "transfer_restriction_reasons"),
         Symbol::new(env, "pause"),
         Symbol::new(env, "asset_lifecycle"),
         Symbol::new(env, "metadata"),

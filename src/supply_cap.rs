@@ -1,7 +1,7 @@
 use soroban_sdk::{contractimpl, contracttype, Address, Env};
 
 use crate::admin::{get_admin, require_not_paused};
-use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey};
+use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error};
 
 // ─── Events ───────────────────────────────────────────────────────────────────
 
@@ -42,27 +42,27 @@ pub fn get_pending_supply_cap(env: &Env) -> Option<i128> {
 
 /// Enforces the active supply cap before a mint of `mint_amount`.
 ///
-/// Reverts if a cap is set (`> 0`) and the resulting total supply would
-/// exceed it. A cap of `0` is treated as "unbounded" and never blocks.
+/// Returns `Err(Error::SupplyCapExceeded)` (code 7004) if a cap is set (`> 0`)
+/// and the resulting total supply would exceed it. A cap of `0` is treated as "unbounded" and never blocks.
 ///
 /// Note: this only constrains *future* minting. If the cap is later lowered
 /// below the current total supply, existing supply is not burned; mints that
 /// would push supply above the new cap simply fail until supply falls (via
 /// burns/transfers out) or the cap is raised.
-pub fn enforce_supply_cap(env: &Env, mint_amount: i128) {
+pub fn enforce_supply_cap(env: &Env, mint_amount: i128) -> Result<(), Error> {
     let cap = get_supply_cap(env);
     if cap <= 0 {
-        return;
+        return Ok(());
     }
     let supply: i128 = env
         .storage()
         .instance()
         .get(&DataKey::TotalSupply)
         .unwrap_or(0);
-    assert!(
-        supply + mint_amount <= cap,
-        "Mint would exceed the active supply cap"
-    );
+    if supply + mint_amount > cap {
+        return Err(Error::SupplyCapExceeded);
+    }
+    Ok(())
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -140,7 +140,9 @@ impl AegisContract {
         let previous = get_supply_cap(&env);
 
         // Clear the proposal slot so it cannot be re-accepted.
-        env.storage().instance().remove(&DataKey::SupplyCapCandidate);
+        env.storage()
+            .instance()
+            .remove(&DataKey::SupplyCapCandidate);
         env.storage().instance().set(&DataKey::SupplyCap, &proposed);
 
         env.events().publish(
@@ -166,12 +168,11 @@ impl AegisContract {
             "Unauthorized: only admin can cancel a supply cap proposal"
         );
 
-        let had = env
-            .storage()
-            .instance()
-            .has(&DataKey::SupplyCapCandidate);
+        let had = env.storage().instance().has(&DataKey::SupplyCapCandidate);
         assert!(had, "No pending supply cap proposal to cancel");
 
-        env.storage().instance().remove(&DataKey::SupplyCapCandidate);
+        env.storage()
+            .instance()
+            .remove(&DataKey::SupplyCapCandidate);
     }
 }
