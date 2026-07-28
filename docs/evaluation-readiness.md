@@ -192,6 +192,7 @@ If you're contributing during a paid period (e.g., GrantFox campaign):
 - [Emergency Pause Policy](./emergency-pause.md) — global pause mechanism and authorization
 
 ### Testing & verification:
+- [Minimum Testing Standards](./testing-standards.md) — **mandatory** testing requirements per module, happy-path and negative-path expectations, integration fixtures, and no-test justification policy
 - [Failing CI Response Guide](./failing-ci-guide.md) — how to reproduce and fix automation failures
 - [Local Verification Command](./local-verification.md) — single pre-push command
 
