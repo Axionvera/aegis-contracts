@@ -3,6 +3,7 @@
 use super::*;
 use crate::asset::{AssetMintedEvent, TransferEvent, YieldDistributedEvent};
 use crate::compliance::{UserWhitelistedEvent, WhitelistRevokedEvent};
+use crate::eligibility::InvestorEligibility;
 use crate::errors::Error;
 use soroban_sdk::{
     testutils::{Address as _, Events as _},
@@ -1171,4 +1172,230 @@ fn test_holding_cap_governance_requires_admin_and_two_steps() {
     // Negative proposal is rejected.
     let r = client.try_propose_holding_cap(&admin, &-1);
     assert!(r.is_err());
+}
+
+// ─── Investor eligibility read helpers (#14) ─────────────────────────────────
+
+#[test]
+fn test_eligibility_default_state_is_ineligible() {
+    let (env, client, admin, _user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+
+    // user2 was never whitelisted and has never held a balance.
+    let elig = client.get_investor_eligibility(&user2);
+    assert_eq!(
+        elig,
+        InvestorEligibility {
+            whitelisted: false,
+            contract_paused: false,
+            balance: 0,
+            holding_cap: 0,
+            remaining_capacity: None,
+            can_receive: false,
+            can_send: false,
+        }
+    );
+}
+
+#[test]
+fn test_eligibility_reflects_whitelisted_holder_with_balance() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&user1, &user2, &500);
+
+    let elig = client.get_investor_eligibility(&user2);
+    assert_eq!(
+        elig,
+        InvestorEligibility {
+            whitelisted: true,
+            contract_paused: false,
+            balance: 500,
+            holding_cap: 0,
+            remaining_capacity: None,
+            can_receive: true,
+            can_send: true,
+        }
+    );
+}
+
+#[test]
+fn test_eligibility_reflects_holding_cap_headroom() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user2);
+    client.propose_holding_cap(&admin, &500);
+    client.accept_holding_cap(&admin);
+
+    // Partially filled: headroom remains, so the investor can still receive.
+    client.mint_asset(&user1, &user2, &300);
+    let elig = client.get_investor_eligibility(&user2);
+    assert_eq!(elig.holding_cap, 500);
+    assert_eq!(elig.remaining_capacity, Some(200));
+    assert!(elig.can_receive);
+    assert!(elig.can_send);
+
+    // Filled to the cap: no headroom left, so the investor cannot receive
+    // further tokens, but can still send out of their existing balance.
+    client.mint_asset(&user1, &user2, &200);
+    let elig = client.get_investor_eligibility(&user2);
+    assert_eq!(elig.balance, 500);
+    assert_eq!(elig.remaining_capacity, Some(0));
+    assert!(!elig.can_receive);
+    assert!(elig.can_send);
+}
+
+#[test]
+fn test_eligibility_reflects_paused_contract() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&user1, &user2, &500);
+
+    client.pause(&admin);
+
+    // The read helper itself must remain callable while paused...
+    let elig = client.get_investor_eligibility(&user2);
+    // ...but reflects that no transfer/mint can currently succeed.
+    assert!(elig.whitelisted);
+    assert!(elig.contract_paused);
+    assert_eq!(elig.balance, 500);
+    assert!(!elig.can_receive);
+    assert!(!elig.can_send);
+}
+
+#[test]
+fn test_check_transfer_eligibility_true_for_eligible_transfer() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&user1, &user1, &1000);
+
+    assert!(client.check_transfer_eligibility(&user1, &user2, &250));
+
+    // The check does not mutate state: the actual transfer still succeeds
+    // afterwards for the same amount.
+    let result = client.try_transfer(&user1, &user2, &250);
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_check_transfer_eligibility_false_when_invalid_amount() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+
+    assert!(!client.check_transfer_eligibility(&user1, &user2, &0));
+    assert!(!client.check_transfer_eligibility(&user1, &user2, &-10));
+}
+
+#[test]
+fn test_check_transfer_eligibility_false_when_sender_not_whitelisted() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user2);
+    // user1 was never whitelisted.
+
+    assert!(!client.check_transfer_eligibility(&user1, &user2, &100));
+}
+
+#[test]
+fn test_check_transfer_eligibility_false_when_receiver_not_whitelisted() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user1);
+    // user2 was never whitelisted.
+
+    assert!(!client.check_transfer_eligibility(&user1, &user2, &100));
+}
+
+#[test]
+fn test_check_transfer_eligibility_false_when_insufficient_balance() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&user1, &user1, &50);
+
+    // user1 only has a balance of 50.
+    assert!(!client.check_transfer_eligibility(&user1, &user2, &100));
+}
+
+#[test]
+fn test_check_transfer_eligibility_false_when_over_holding_cap() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&user1, &user1, &1000);
+
+    client.propose_holding_cap(&admin, &300);
+    client.accept_holding_cap(&admin);
+
+    // Would push user2 over the 300 cap.
+    assert!(!client.check_transfer_eligibility(&user1, &user2, &301));
+    // Exactly at the cap is still eligible.
+    assert!(client.check_transfer_eligibility(&user1, &user2, &300));
+}
+
+#[test]
+fn test_check_transfer_eligibility_false_when_contract_paused() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&user1, &user1, &1000);
+
+    client.pause(&admin);
+
+    // The read helper itself must remain callable while paused, but must
+    // reflect that transfers cannot currently succeed.
+    assert!(!client.check_transfer_eligibility(&user1, &user2, &100));
+}
+
+#[test]
+fn test_check_transfer_eligibility_matches_actual_transfer_outcomes() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user1);
+    client.mint_asset(&user1, &user1, &1000);
+    // user2 deliberately left off the whitelist.
+
+    assert!(!client.check_transfer_eligibility(&user1, &user2, &100));
+    let result = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(result, Err(Ok(Error::ReceiverNotWhitelisted)));
 }
