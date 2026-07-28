@@ -50,6 +50,10 @@ pub enum Error {
     InvalidAmount = 5000,
     /// The sender's balance is insufficient to cover the requested amount.
     InsufficientBalance = 5001,
+    /// Minting would exceed the active global supply cap.
+    SupplyCapExceeded = 5002,
+    /// The investor's balance would exceed the active holding cap.
+    HoldingCapExceeded = 5003,
     // ─── 6000s: Asset Metadata ──────────────────────────────────────────────
     // Reserved for future asset-metadata validation errors (name, symbol,
     // decimals, schema checks). No active failure paths use this range yet.
