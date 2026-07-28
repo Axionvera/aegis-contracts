@@ -118,6 +118,31 @@ fail, or no checks appear at all.
    `synchronize` (new push) and updates the check status.
 5. Confirm the checks flip to green on the PR before requesting review.
 
+## Maintainer expectations
+
+Maintainers enforce the following baseline before reviewing or approving any PR:
+
+- **All CI checks must be green** before a maintainer will review. A PR with
+  red checks will be set to `changes requested` or left unreviewed until
+  the contributor fixes the failure and checks pass.
+- **`make verify` must pass locally.** If CI fails but the contributor claims
+  "it works on my machine," maintainers expect a screenshot or log showing
+  the full `make verify` output attached to the PR. Claims without evidence
+  will be rejected.
+- **Maintainers do not debug CI failures for contributors** beyond confirming
+  the failure category. It is the contributor's responsibility to reproduce,
+  fix, and confirm the fix locally before re-requesting review.
+- **Masking failures is not acceptable.** Adding `#[allow(...)]`, removing
+  existing tests to make CI pass, or silencing warnings without justification
+  will result in immediate closure of the PR.
+- **Repeated failing-CI submissions** from the same contributor — two or more
+  PRs in a row where checks were not run locally before pushing — may result
+  in temporary suspension from the repo until the contributor demonstrates
+  understanding of the local verification workflow.
+- **External automation failures** (dispatch token, permission errors) are the
+  only CI failures maintainers will investigate proactively. In all other
+  cases, the contributor fixes the code.
+
 ## When to ask a maintainer
 - The failure is in the **external automation** (dispatch/token), not your code.
 - A check is red but `make build` + `make test` are green locally (possible
