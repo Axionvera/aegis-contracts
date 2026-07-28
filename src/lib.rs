@@ -2,6 +2,7 @@
 
 pub mod asset;
 pub mod compliance;
+pub mod events;
 #[cfg(test)]
 mod test;
 
@@ -28,5 +29,7 @@ impl AegisContract {
             "Contract already initialized"
         );
         env.storage().instance().set(&DataKey::Admin, &admin);
+
+        events::contract_initialized(&env, &admin);
     }
 }

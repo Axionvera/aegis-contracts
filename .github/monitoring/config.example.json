@@ -1,0 +1,27 @@
+{
+  "_comment": "Copy to config.json or export as AEGIS_* environment variables.",
+  "network": "testnet",
+  "rpcUrl": "https://soroban-testnet.stellar.org",
+  "wsUrl": null,
+  "contractIds": ["CXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"],
+  "pollIntervalMs": 2000,
+  "pageLimit": 100,
+  "startLedgerLookback": 120,
+  "reconnect": {
+    "initialDelayMs": 500,
+    "maxDelayMs": 30000,
+    "factor": 2,
+    "jitter": 0.2,
+    "maxAttempts": 0
+  },
+  "store": {
+    "path": "./data/events.jsonl",
+    "memoryLimit": 10000,
+    "flushEvery": 25,
+    "flushIntervalMs": 1000,
+    "enabled": true
+  },
+  "dashboard": { "enabled": true, "host": "127.0.0.1", "port": 4500 },
+  "analytics": { "windowMs": 300000, "bucketMs": 10000 },
+  "verbose": false
+}

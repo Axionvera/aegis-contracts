@@ -1,0 +1,31 @@
+{
+  "name": "@aegis/monitoring",
+  "version": "1.0.0",
+  "description": "Real-time Soroban contract event streaming, filtering, alerting, persistence, replay and analytics for the Aegis RWA Protocol",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "aegis-monitor": "src/cli.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node src/cli.js",
+    "dev": "node src/cli.js --simulate",
+    "test": "node --test tests/",
+    "test:watch": "node --test --watch tests/"
+  },
+  "keywords": [
+    "stellar",
+    "soroban",
+    "websocket",
+    "monitoring",
+    "events",
+    "rwa"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

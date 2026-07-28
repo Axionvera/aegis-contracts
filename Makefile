@@ -1,17 +1,50 @@
 default: build
 
+# soroban-sdk >= 22 requires the `wasm32v1-none` target. Rust 1.82+ enables
+# reference-types/multi-value on `wasm32-unknown-unknown`, which the Soroban
+# environment rejects, so building against the old target fails at build-script
+# time regardless of contract code.
+WASM_TARGET ?= wasm32v1-none
+WASM := target/$(WASM_TARGET)/release/aegis_contracts.wasm
+
 build:
-	cargo build --target wasm32-unknown-unknown --release
-	@echo "Build successful. WASM located in target/wasm32-unknown-unknown/release/"
+	@command -v rustup >/dev/null 2>&1 \
+		&& rustup target add $(WASM_TARGET) \
+		|| echo "note: rustup not on PATH; assuming $(WASM_TARGET) is installed"
+	cargo build --target $(WASM_TARGET) --release
+	@echo "Build successful. WASM located at $(WASM)"
 
 test:
 	cargo test
+
+# Off-chain monitoring service (real-time event streaming).
+monitor-install:
+	cd monitoring && npm install
+
+monitor-test:
+	cd monitoring && npm test
+
+monitor:
+	cd monitoring && npm start
+
+monitor-demo:
+	cd monitoring && npm run dev
+
+# Regenerate the on-chain XDR fixtures consumed by monitoring's
+# tests/onchain-compat.test.js.
+dump-events:
+	cargo test dump_event_xdr -- --ignored --nocapture
+
+test-all: test monitor-test
 
 fmt:
 	cargo fmt --all
 
 clean:
 	cargo clean
+	rm -rf monitoring/node_modules monitoring/data
 
 optimize: build
-	soroban contract optimize --wasm target/wasm32-unknown-unknown/release/aegis_contracts.wasm
+	stellar contract optimize --wasm $(WASM)
+
+.PHONY: default build test monitor-install monitor-test monitor monitor-demo dump-events test-all fmt clean optimize
