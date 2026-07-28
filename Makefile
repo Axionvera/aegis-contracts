@@ -46,7 +46,7 @@ DEPLOY_OUT       := .aegis-deploy
 .DEFAULT_GOAL := help
 .PHONY: help build build-legacy test test-verbose fmt fmt-check clippy clean \
         optimize check-cli check-target deploy initialize invoke-status \
-        network-up network-down network-add fund verify all ci
+        network-up network-down network-add fund verify verify-interface all ci
 
 # ─── Help ─────────────────────────────────────────────────────────────────────
 
@@ -118,6 +118,14 @@ clippy:
 
 ## ci: Run the checks CI enforces (fmt-check + clippy + test + build).
 ci: fmt-check clippy test build
+
+## verify: Single local gate contributors should run before pushing.
+#   Runs formatting check, lint, the test suite, and a release build in one
+#   command. This is the recommended pre-push check to avoid failing CI.
+#   (clippy is skipped if the toolchain lacks it; build/test still run.)
+verify: fmt-check clippy test build
+	@echo ""
+	@echo "Local verification passed: fmt-check + clippy + test + build."
 
 ## all: Format, test, and build.
 all: fmt test build
@@ -199,7 +207,7 @@ invoke-status: check-cli
 	@$(STELLAR) contract invoke --id $(CONTRACT_ID) --source-account $(SOURCE_ACCOUNT) \
 		--network $(NETWORK) -- get_asset_status
 
-## verify: Print the deployed contract's interface from the network.
-verify: check-cli
+## verify-interface: Print the deployed contract's interface from the network.
+verify-interface: check-cli
 	@test -n "$(CONTRACT_ID)" || { echo "ERROR: CONTRACT_ID is not set."; exit 1; }
 	$(STELLAR) contract info interface --id $(CONTRACT_ID) --network $(NETWORK)
