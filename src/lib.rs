@@ -59,6 +59,14 @@ pub enum DataKey {
     HoldingCap,
     /// The pending (proposed) holding cap awaiting 2-step acceptance.
     HoldingCapCandidate,
+    /// Current lifecycle status for the issued asset.
+    AssetStatus,
+    /// Display name for the issued asset.
+    AssetName,
+    /// Ticker symbol for the issued asset.
+    AssetSymbol,
+    /// Optional metadata URI for off-chain asset details.
+    AssetMetadataUri,
 }
 
 #[contract]
