@@ -27,15 +27,35 @@ Any call above made before `initialize` reverts with `NotInitialized`.
 * `is_paused(env)`: Returns whether the contract is currently paused. Always available.
 * All state-changing calls listed on this page revert with `ContractPaused` while the contract is paused.
 
-## Compliance (compliance.rs)
+## Compliance Lifecycle (compliance.rs)
 
-* `whitelist_user(env, admin, user)`: Adds `user` to the persistent compliance map. Requires ComplianceOfficer role (or Admin) (`Unauthorized`). Blocked when paused (`ContractPaused`). Emits `UserWhitelistedEvent`.
-* `revoke_whitelist(env, admin, user)`: Removes `user` from the compliance whitelist. Requires ComplianceOfficer role (or Admin) (`Unauthorized`). Blocked when paused (`ContractPaused`). Emits `WhitelistRevokedEvent`.
+Investor compliance is a five-state lifecycle — `Unknown`, `Pending`,
+`Approved`, `Revoked`, `Blocked` — with an enforced transition matrix. See
+[`docs/compliance-lifecycle.md`](compliance-lifecycle.md) for the full state
+table, matrix, and authorization rules.
+
+* `set_compliance_status(env, caller, user, new_status)`: Moves `user` to `new_status`, validated against the transition matrix. Requires ComplianceOfficer, EmergencyOfficer, or Admin — except when the address is currently `Blocked`, where only the supreme admin may act (`Unauthorized`). Reverts with `ComplianceStatusUnchanged` for a no-op or `InvalidComplianceTransition` for an illegal transition. Blocked when paused (`ContractPaused`). Emits `ComplianceStatusChangedEvent`.
+* `whitelist_user(env, admin, user)`: Legacy alias for a transition to `Approved`. Requires ComplianceOfficer role (or Admin) (`Unauthorized`). Blocked when paused (`ContractPaused`). Reverts with `InvalidComplianceTransition` if `user` is `Blocked`. Idempotent when already `Approved`. Emits `ComplianceStatusChangedEvent` (on a real transition) and always `UserWhitelistedEvent`.
+* `revoke_whitelist(env, admin, user)`: Legacy alias for a transition to `Revoked`. Requires ComplianceOfficer role (or Admin) (`Unauthorized`). Blocked when paused (`ContractPaused`). A tolerated no-op for `Unknown` and `Blocked` addresses. Emits `ComplianceStatusChangedEvent` (on a real transition) and always `WhitelistRevokedEvent`.
+
+### Compliance reads
+
+Pure reads; never mutate state, require no authorization, and remain available before `initialize` and while paused.
+
+* `get_compliance_status(env, user)`: Returns the address's `ComplianceStatus` (`Unknown` when no record exists).
+* `is_compliance_transition_allowed(env, from, to)`: Returns whether `from -> to` is permitted by the matrix.
+* `get_allowed_transitions(env, from)`: Returns every state reachable from `from` in one transition.
+* `get_allowed_transitions_for(env, user)`: The same, for `user`'s current state.
 
 ## Asset Operations (asset.rs)
 
+
+* `mint_asset(env, admin, to, amount)`: Mints `amount` to `to`. Requires AssetManager role (or Admin) (`Unauthorized`). Reverts with `InvalidAmount` if `amount <= 0`, or `AssetNotActive` if the asset lifecycle status is not `Active`. The receiver must be `Approved` under the compliance lifecycle — otherwise reverts with `ReceiverNotWhitelisted` (`Unknown`/`Revoked`), `ReceiverCompliancePending` (`Pending`), or `ReceiverBlocked` (`Blocked`). Blocked when paused (`ContractPaused`). Emits `AssetMintedEvent` (includes the running `total_supply`).
+* `transfer(env, from, to, amount)`: Moves `amount` between addresses. Requires `from` auth. Reverts with `InvalidAmount` if `amount <= 0`; `AssetNotActive` if the asset is not `Active`; `InsufficientBalance` if `from` cannot cover `amount`. Both parties must be `Approved` — otherwise reverts with `SenderNotWhitelisted`/`SenderCompliancePending`/`SenderBlocked` or the corresponding receiver code. The sender is checked before the receiver. Blocked when paused (`ContractPaused`). Emits `TransferEvent` on success only — a compliance-blocked transfer reverts and emits nothing; see [`docs/events.md`](events.md#transfer-restriction-events).
+
 * `mint_asset(env, admin, to, amount)`: Mints `amount` to `to`. Requires AssetManager role (or Admin) (`Unauthorized`). Reverts with `InvalidAmount` if `amount <= 0`; `SupplyCapExceeded` (`5002`) if minting would exceed the active global supply cap; `ReceiverNotWhitelisted` if `to` is not whitelisted. Blocked when paused (`ContractPaused`). Emits `AssetMintedEvent` (includes the running `total_supply`).
 * `transfer(env, from, to, amount)`: Moves `amount` between addresses. Requires `from` auth. Reverts with `InvalidAmount` if `amount <= 0`; `SenderNotWhitelisted` or `ReceiverNotWhitelisted` if either party is not whitelisted; `InsufficientBalance` (`5001`) if `from` cannot cover `amount`; `HoldingCapExceeded` (`5003`) if the receiver's balance would exceed the active holding cap. Blocked when paused (`ContractPaused`). Emits `TransferEvent` on success only — a compliance-blocked transfer reverts and emits nothing; see [`docs/events.md`](events.md#transfer-restriction-events).
+
 * `distribute_yield(env, admin, amount)`: Triggers a dividend yield event for off-chain indexing. Requires AssetManager role (or Admin) (`Unauthorized`). Reverts with `InvalidAmount` if `amount <= 0`. Blocked when paused (`ContractPaused`). Emits `YieldDistributedEvent`.
 
 ## Supply Cap Governance (supply_cap.rs)
@@ -62,7 +82,7 @@ These functions are always available, even when the contract is paused:
 
 * `get_balance_of(env, address)`: Returns the token balance for an address (defaults to 0).
 * `get_total_supply(env)`: Returns the global total supply (defaults to 0).
-* `is_whitelisted(env, user)`: Returns whether an address is on the compliance whitelist.
+* `is_whitelisted(env, user)`: Returns whether an address is compliance-approved. Derived from the lifecycle — `true` only for `ComplianceStatus::Approved`. Prefer `get_compliance_status` for the full state.
 
 ## Investor Eligibility (eligibility.rs)
 
@@ -71,5 +91,27 @@ dashboard consumers. Never mutate state; always available, even when paused.
 See [`docs/investor-eligibility.md`](investor-eligibility.md) for field
 semantics and SDK usage guidance.
 
+
+* `get_investor_eligibility(env, investor)`: Returns an `InvestorEligibility` struct with the investor's `compliance_status` and derived `whitelisted` flag, the contract's pause state, current balance, active holding cap, remaining holding-cap capacity, and derived `can_send`/`can_receive` flags.
+* `check_transfer_eligibility(env, from, to, amount)`: Returns `true` if a transfer of `amount` from `from` to `to` would currently pass every check `transfer()` performs (pause, asset lifecycle status, compliance lifecycle status on both sides, holding cap, sender balance).
+
+## Capability Flags (capabilities.rs)
+
+Pure reads that advertise which modules are enabled and which protocol
+behaviours are supported, for SDK/dashboard feature gating. Never mutate
+state, require no authorization, and — unlike every call above — remain
+available **before `initialize`** as well as while paused. See
+[`docs/capabilities.md`](capabilities.md) for the full field reference, the
+key registry, and versioning rules.
+
+* `get_capabilities(env)`: Returns a `ContractCapabilities` struct describing compliance, minting, transfer, pause, metadata, and event support, plus `capability_version` / `contract_version`. Each behaviour is a `CapabilityStatus` — `Supported`, `Planned`, or `Unsupported` — alongside runtime switches (`paused`, `operations_enabled`, `supply_cap_enforced`, `holding_cap_enforced`, `metadata_configured`, `initialized`).
+* `supports_capability(env, capability)`: Returns the `CapabilityStatus` for a single capability key. Unknown keys return `Unsupported` instead of reverting, so newer clients fail safe against older deployments.
+* `get_capability_keys(env)`: Returns every capability key understood by this contract version.
+
+> A capability indicates the protocol *implements* a behaviour — not that the
+> caller is authorized to perform it, nor that it will succeed against current
+> state. Authorization remains governed by [`docs/admin-roles.md`](admin-roles.md).
+
 * `get_investor_eligibility(env, investor)`: Returns an `InvestorEligibility` struct with the investor's whitelist status, the contract's pause state, current balance, active holding cap, remaining holding-cap capacity, and derived `can_send`/`can_receive` flags.
 * `check_transfer_eligibility(env, from, to, amount)`: Returns `true` if a transfer of `amount` from `from` to `to` would currently pass every check `transfer()` performs (pause, whitelist on both sides, holding cap, sender balance).
+

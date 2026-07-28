@@ -40,10 +40,28 @@ pub enum Error {
     NotPaused = 3006,
 
     // ─── 4000s: Compliance ──────────────────────────────────────────────────
-    /// The sending address is not on the compliance whitelist.
+    /// The sending address is not compliance-approved (status `Unknown` or
+    /// `Revoked`). See `docs/compliance-lifecycle.md`.
     SenderNotWhitelisted = 4000,
-    /// The receiving address is not on the compliance whitelist.
+    /// The receiving address is not compliance-approved (status `Unknown` or
+    /// `Revoked`). See `docs/compliance-lifecycle.md`.
     ReceiverNotWhitelisted = 4001,
+    /// The sending address is `Blocked` — sanctioned or frozen. Distinct from
+    /// `SenderNotWhitelisted` so clients never invite a blocked holder to
+    /// re-submit KYC.
+    SenderBlocked = 4002,
+    /// The receiving address is `Blocked` — sanctioned or frozen.
+    ReceiverBlocked = 4003,
+    /// The sending address is `Pending` — KYC submitted but not yet cleared.
+    SenderCompliancePending = 4004,
+    /// The receiving address is `Pending` — KYC submitted but not yet cleared.
+    ReceiverCompliancePending = 4005,
+    /// The requested compliance status transition is not permitted by the
+    /// lifecycle state machine (e.g. `Blocked` -> `Approved`).
+    InvalidComplianceTransition = 4006,
+    /// The requested compliance status equals the address's current status,
+    /// so there is no transition to apply.
+    ComplianceStatusUnchanged = 4007,
 
     // ─── 5000s: Minting & Transfers ─────────────────────────────────────────
     /// The requested amount must be strictly greater than zero.

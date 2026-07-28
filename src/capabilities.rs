@@ -16,7 +16,7 @@ use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey};
 /// does not know about. Fields are append-only: never remove or repurpose an
 /// existing field or key (same stability contract as `docs/events.md` topics
 /// and `docs/error-codes.md` numeric codes).
-pub const CAPABILITY_SCHEMA_VERSION: u32 = 1;
+pub const CAPABILITY_SCHEMA_VERSION: u32 = 2;
 
 // ─── Response types ───────────────────────────────────────────────────────────
 
@@ -56,15 +56,25 @@ pub struct ComplianceCapabilities {
     pub whitelist_revocation: CapabilityStatus,
     /// Whitelisting many addresses in one invocation.
     pub batch_whitelisting: CapabilityStatus,
-    /// Per-investor jurisdiction / accreditation tiers. The whitelist is a
-    /// single boolean, so regime-specific segmentation is off-chain only.
+    /// Per-investor jurisdiction / accreditation tiers. The lifecycle models
+    /// compliance *state*, not investor class, so regime-specific
+    /// segmentation (Reg D vs. Reg S) remains off-chain only.
     pub investor_tiers: CapabilityStatus,
+    /// Five-state compliance lifecycle (`Unknown` / `Pending` / `Approved` /
+    /// `Revoked` / `Blocked`) with per-address status reads
+    /// (`get_compliance_status`). See `docs/compliance-lifecycle.md`.
+    pub lifecycle_states: CapabilityStatus,
+    /// Enforced transition matrix on every status change
+    /// (`set_compliance_status`), plus the pre-flight reads
+    /// `is_compliance_transition_allowed` /
+    /// `get_allowed_compliance_transitions`.
+    pub lifecycle_transitions: CapabilityStatus,
     /// Aggregated read helpers (`get_investor_eligibility`,
     /// `check_transfer_eligibility`).
     pub eligibility_reads: CapabilityStatus,
-    /// Whether every mint checks the receiver against the whitelist.
+    /// Whether every mint checks the receiver's lifecycle status.
     pub enforced_on_mint: bool,
-    /// Whether every transfer checks both parties against the whitelist.
+    /// Whether every transfer checks both parties' lifecycle statuses.
     pub enforced_on_transfer: bool,
 }
 
@@ -161,6 +171,9 @@ pub struct EventCapabilities {
     pub module_enabled: bool,
     /// `user_whitelisted`, `whitelist_revoked`.
     pub compliance_events: CapabilityStatus,
+    /// `compliance_status_changed` — the canonical lifecycle transition
+    /// event, carrying both the previous and the new status.
+    pub compliance_lifecycle_events: CapabilityStatus,
     /// `asset_minted`, `yield_distributed`.
     pub minting_events: CapabilityStatus,
     /// `transfer`.
@@ -293,8 +306,10 @@ pub fn get_capabilities(env: &Env) -> ContractCapabilities {
             whitelist_revocation: CapabilityStatus::Supported,
             // Tracked gas optimisation; today each address costs one call.
             batch_whitelisting: CapabilityStatus::Planned,
-            // The whitelist is a single boolean with no tier data attached.
+            // The lifecycle carries compliance state, not investor class.
             investor_tiers: CapabilityStatus::Unsupported,
+            lifecycle_states: CapabilityStatus::Supported,
+            lifecycle_transitions: CapabilityStatus::Supported,
             eligibility_reads: CapabilityStatus::Supported,
             enforced_on_mint: true,
             enforced_on_transfer: true,
@@ -344,6 +359,7 @@ pub fn get_capabilities(env: &Env) -> ContractCapabilities {
         events: EventCapabilities {
             module_enabled: true,
             compliance_events: CapabilityStatus::Supported,
+            compliance_lifecycle_events: CapabilityStatus::Supported,
             minting_events: CapabilityStatus::Supported,
             transfer_events: CapabilityStatus::Supported,
             admin_events: CapabilityStatus::Supported,
@@ -394,6 +410,12 @@ pub fn supports_capability(env: &Env, capability: &Symbol) -> CapabilityStatus {
     }
     if *capability == Symbol::new(env, "investor_tiers") {
         return caps.compliance.investor_tiers;
+    }
+    if *capability == Symbol::new(env, "compliance_lifecycle") {
+        return caps.compliance.lifecycle_states;
+    }
+    if *capability == Symbol::new(env, "compliance_transitions") {
+        return caps.compliance.lifecycle_transitions;
     }
     if *capability == Symbol::new(env, "eligibility_reads") {
         return caps.compliance.eligibility_reads;
@@ -456,6 +478,9 @@ pub fn supports_capability(env: &Env, capability: &Symbol) -> CapabilityStatus {
     if *capability == Symbol::new(env, "events") {
         return status_of(caps.events.module_enabled);
     }
+    if *capability == Symbol::new(env, "compliance_lifecycle_events") {
+        return caps.events.compliance_lifecycle_events;
+    }
     if *capability == Symbol::new(env, "transfer_restriction_events") {
         return caps.events.transfer_restriction_events;
     }
@@ -483,6 +508,8 @@ pub fn get_capability_keys(env: &Env) -> Vec<Symbol> {
         Symbol::new(env, "whitelist_revocation"),
         Symbol::new(env, "batch_whitelisting"),
         Symbol::new(env, "investor_tiers"),
+        Symbol::new(env, "compliance_lifecycle"),
+        Symbol::new(env, "compliance_transitions"),
         Symbol::new(env, "eligibility_reads"),
         Symbol::new(env, "minting"),
         Symbol::new(env, "burning"),
@@ -500,6 +527,7 @@ pub fn get_capability_keys(env: &Env) -> Vec<Symbol> {
         Symbol::new(env, "metadata_uri"),
         Symbol::new(env, "decimals"),
         Symbol::new(env, "events"),
+        Symbol::new(env, "compliance_lifecycle_events"),
         Symbol::new(env, "transfer_restriction_events"),
         Symbol::new(env, "asset_registered_event"),
     ]

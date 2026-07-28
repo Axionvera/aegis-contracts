@@ -55,7 +55,15 @@ pub enum DataKey {
     /// The role assigned to a specific address.
     Role(Address),
     /// Legacy whitelist flag (kept for backwards compatibility).
+    ///
+    /// Written only by the compliance lifecycle writer as a derived mirror of
+    /// `ComplianceStatus(Address)`: present and `true` iff the address's
+    /// lifecycle status is `Approved`. Never the source of truth — read
+    /// `ComplianceStatus` instead. See `docs/compliance-lifecycle.md`.
     Whitelist(Address),
+    /// Full compliance lifecycle status for an investor address. Absent means
+    /// `ComplianceStatus::Unknown` (the safe default: nothing is permitted).
+    ComplianceStatus(Address),
     /// Token balance for an address.
     Balance(Address),
     /// Global total supply counter.

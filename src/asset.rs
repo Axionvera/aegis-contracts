@@ -67,6 +67,41 @@ pub struct AssetMetadataUpdatedEvent {
     pub uri: String,
 }
 
+
+/// Returns the current asset lifecycle status, defaulting to `Active` when
+/// none has been recorded. Pure read — shared with the capability module so
+/// both report the same lifecycle state.
+pub fn get_asset_status_internal(env: &Env) -> AssetStatus {
+    env.storage()
+        .instance()
+        .get(&DataKey::AssetStatus)
+        .unwrap_or(AssetStatus::Active)
+}
+
+fn transition_is_valid(from: &AssetStatus, to: &AssetStatus) -> bool {
+    if from == to {
+        return false;
+    }
+
+    match from {
+        AssetStatus::Active => {
+            matches!(
+                to,
+                AssetStatus::Paused | AssetStatus::Retired | AssetStatus::Blocked
+            )
+        }
+        AssetStatus::Paused => {
+            matches!(
+                to,
+                AssetStatus::Active | AssetStatus::Retired | AssetStatus::Blocked
+            )
+        }
+        AssetStatus::Retired => false,
+        AssetStatus::Blocked => matches!(to, AssetStatus::Active | AssetStatus::Retired),
+    }
+}
+
+n
 #[contractimpl]
 impl AegisContract {
     /// Returns the current metadata snapshot for the asset.
@@ -140,9 +175,11 @@ impl AegisContract {
             return Err(Error::InvalidAmount);
         }
 
-        if !compliance::is_whitelisted(&env, &to) {
-            return Err(Error::ReceiverNotWhitelisted);
-        }
+        // Consume the compliance lifecycle state: only an `Approved` receiver
+        // may be credited. `Blocked` and `Pending` return their own error
+        // codes so a client can distinguish a sanctions freeze from an
+        // in-flight KYC review. See `docs/compliance-lifecycle.md`.
+        compliance::require_can_receive(&env, &to)?;
 
         // Enforce the active supply cap before increasing total supply.
         // This is a compliance-sensitive control: it must run even for the
@@ -195,12 +232,11 @@ impl AegisContract {
             return Err(Error::InvalidAmount);
         }
 
-        if !compliance::is_whitelisted(&env, &from) {
-            return Err(Error::SenderNotWhitelisted);
-        }
-        if !compliance::is_whitelisted(&env, &to) {
-            return Err(Error::ReceiverNotWhitelisted);
-        }
+        // Both parties must be `Approved` under the compliance lifecycle.
+        // Sender is checked first so a blocked/pending sender is reported
+        // even when the receiver is also ineligible.
+        compliance::require_can_send(&env, &from)?;
+        compliance::require_can_receive(&env, &to)?;
 
         // Enforce the per-investor holding cap before crediting the receiver.
         // Applies uniformly to transfers, so no investor can be credited

@@ -43,8 +43,9 @@ name, never on struct declaration order or Rust type layout.**
 | `admin_renounced`             | `AdminTransferredEvent`      | `admin.rs`      | `renounce_admin`                                | `previous_admin: Address`, `new_admin: Address` (both equal to the renouncing admin) |
 | `contract_paused`             | `ContractPausedEvent`        | `admin.rs`      | `pause`                                         | `admin: Address` (the pausing caller — Admin or EmergencyOfficer) |
 | `contract_unpaused`           | `ContractUnpausedEvent`      | `admin.rs`      | `unpause`                                       | `admin: Address` |
-| `user_whitelisted`            | `UserWhitelistedEvent`       | `compliance.rs` | `whitelist_user`                                | `caller: Address`, `user: Address` |
-| `whitelist_revoked`           | `WhitelistRevokedEvent`      | `compliance.rs` | `revoke_whitelist`                              | `caller: Address`, `user: Address` |
+| `compliance_status_changed`   | `ComplianceStatusChangedEvent` | `compliance.rs` | `set_compliance_status`, and `whitelist_user` / `revoke_whitelist` when they cause a real transition | `caller: Address`, `user: Address`, `previous_status: ComplianceStatus`, `new_status: ComplianceStatus` |
+| `user_whitelisted`            | `UserWhitelistedEvent`       | `compliance.rs` | `whitelist_user` (legacy, always)               | `caller: Address`, `user: Address` |
+| `whitelist_revoked`           | `WhitelistRevokedEvent`      | `compliance.rs` | `revoke_whitelist` (legacy, always)             | `caller: Address`, `user: Address` |
 | `asset_minted`                | `AssetMintedEvent`           | `asset.rs`      | `mint_asset`                                    | `caller: Address`, `to: Address`, `amount: i128`, `total_supply: i128` |
 | `transfer`                    | `TransferEvent`              | `asset.rs`      | `transfer`                                      | `from: Address`, `to: Address`, `amount: i128` |
 | `yield_distributed`           | `YieldDistributedEvent`      | `asset.rs`      | `distribute_yield`                              | `caller: Address`, `amount: i128` |
@@ -67,6 +68,25 @@ name, never on struct declaration order or Rust type layout.**
 
 
 ## Scope notes
+
+### Compliance lifecycle events
+
+`compliance_status_changed` is the **canonical compliance signal** and the one
+indexers should build on. It carries both `previous_status` and `new_status`,
+so a projection can be rebuilt from the event stream alone without replaying
+every earlier event to infer what an address was before.
+
+`user_whitelisted` and `whitelist_revoked` are retained for backwards
+compatibility and are emitted *in addition to* the lifecycle event whenever a
+legacy wrapper is called. Within a single legacy call the ordering is
+`compliance_status_changed` first, then the legacy event. A legacy call that
+causes no real transition (re-approving an already-`Approved` address, or
+revoking an `Unknown` one) emits only the legacy event.
+
+Consumers should not treat `whitelist_revoked` as meaning "the address is now
+`Revoked`" — it is also emitted for tolerated no-ops. Read `new_status` from
+`compliance_status_changed`, or call `get_compliance_status`. See
+[`compliance-lifecycle.md`](compliance-lifecycle.md).
 
 ### Asset registration vs. minting
 
@@ -112,6 +132,11 @@ Every event above has a corresponding test in [`src/test.rs`](../src/test.rs)
 asserting its exact topic and payload shape using
 `soroban_sdk::testutils::Events`:
 
+
+- `test_set_compliance_status_emits_lifecycle_event`
+- `test_rejected_transition_emits_no_event`
+- `test_idempotent_whitelist_emits_no_duplicate_lifecycle_event`
+
 **Initialization & Role events:**
 - `test_initialize_emits_event`
 - `test_set_role_emits_event`
@@ -127,6 +152,7 @@ asserting its exact topic and payload shape using
 - `test_unpause_emits_event`
 
 **Compliance events:**
+
 - `test_whitelist_user_emits_event`
 - `test_revoke_whitelist_emits_event`
 
