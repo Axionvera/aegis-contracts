@@ -53,4 +53,10 @@ pub enum Error {
     // ─── 6000s: Asset Metadata ──────────────────────────────────────────────
     // Reserved for future asset-metadata validation errors (name, symbol,
     // decimals, schema checks). No active failure paths use this range yet.
+    /// Minting/transfers are restricted because the asset is not Active.
+    AssetNotActive = 6000,
+    /// Asset status transition is not allowed by lifecycle rules.
+    InvalidAssetStatusTransition = 6001,
+    /// Metadata update is blocked in the current lifecycle status.
+    AssetMetadataUpdateBlocked = 6002,
 }
