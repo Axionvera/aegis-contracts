@@ -45,3 +45,13 @@ These functions are always available, even when the contract is paused:
 * `get_balance_of(env, address)`: Returns the token balance for an address (defaults to 0).
 * `get_total_supply(env)`: Returns the global total supply (defaults to 0).
 * `is_whitelisted(env, user)`: Returns whether an address is on the compliance whitelist.
+
+## Investor Eligibility (eligibility.rs)
+
+Pure reads that compose the checks above into single-call answers for SDK and
+dashboard consumers. Never mutate state; always available, even when paused.
+See [`docs/investor-eligibility.md`](investor-eligibility.md) for field
+semantics and SDK usage guidance.
+
+* `get_investor_eligibility(env, investor)`: Returns an `InvestorEligibility` struct with the investor's whitelist status, the contract's pause state, current balance, active holding cap, remaining holding-cap capacity, and derived `can_send`/`can_receive` flags.
+* `check_transfer_eligibility(env, from, to, amount)`: Returns `true` if a transfer of `amount` from `from` to `to` would currently pass every check `transfer()` performs (pause, whitelist on both sides, holding cap, sender balance).
