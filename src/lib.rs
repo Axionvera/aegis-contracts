@@ -38,6 +38,9 @@ pub enum DataKey {
     Balance(Address),
     /// Global total supply counter.
     TotalSupply,
+    /// Whether the contract is paused. If `true`, all state-changing
+    /// operations (minting, transfers, compliance) are blocked.
+    Paused,
 }
 
 #[contract]
@@ -58,5 +61,26 @@ impl AegisContract {
         env.storage()
             .persistent()
             .set(&DataKey::Role(admin), &Role::Admin);
+    }
+
+    /// Returns the token balance for an address.
+    pub fn get_balance_of(env: Env, address: Address) -> i128 {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Balance(address))
+            .unwrap_or(0)
+    }
+
+    /// Returns the global total supply.
+    pub fn get_total_supply(env: Env) -> i128 {
+        env.storage()
+            .instance()
+            .get(&DataKey::TotalSupply)
+            .unwrap_or(0)
+    }
+
+    /// Returns whether an address is on the compliance whitelist.
+    pub fn is_whitelisted(env: Env, user: Address) -> bool {
+        compliance::is_whitelisted(&env, &user)
     }
 }

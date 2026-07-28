@@ -1,6 +1,6 @@
 use soroban_sdk::{contractimpl, Address, Env};
 
-use crate::admin::{get_admin, require_role};
+use crate::admin::{get_admin, require_not_paused, require_role};
 use crate::compliance;
 use crate::{AegisContract, DataKey, Role};
 
@@ -8,7 +8,9 @@ use crate::{AegisContract, DataKey, Role};
 impl AegisContract {
     /// Mints new RWA tokens to a whitelisted address.
     /// Requires the AssetManager role or Admin.
+    /// Blocked when the contract is paused.
     pub fn mint_asset(env: Env, admin: Address, to: Address, amount: i128) {
+        require_not_paused(&env);
         admin.require_auth();
         require_role(&env, &admin, Role::AssetManager);
         assert!(amount > 0, "Amount must be positive");
@@ -38,7 +40,9 @@ impl AegisContract {
     }
 
     /// Transfers tokens between two whitelisted addresses.
+    /// Blocked when the contract is paused.
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
+        require_not_paused(&env);
         from.require_auth();
         assert!(amount > 0, "Amount must be positive");
 
@@ -77,7 +81,9 @@ impl AegisContract {
 
     /// Mocks the distribution of yield to current token holders.
     /// Requires the AssetManager role or Admin.
+    /// Blocked when the contract is paused.
     pub fn distribute_yield(env: Env, admin: Address, amount: i128) {
+        require_not_paused(&env);
         admin.require_auth();
         require_role(&env, &admin, Role::AssetManager);
         assert!(amount > 0, "Amount must be positive");
