@@ -1,9 +1,9 @@
 #![no_std]
-
 pub mod admin;
 pub mod asset;
 pub mod compliance;
 pub mod errors;
+pub mod holding;
 pub mod supply_cap;
 #[cfg(test)]
 mod test;
@@ -53,6 +53,11 @@ pub enum DataKey {
     SupplyCap,
     /// The pending (proposed) supply cap awaiting 2-step acceptance.
     SupplyCapCandidate,
+    /// The currently active per-investor holding cap. A value of `0` means
+    /// "no holding restriction" (any whitelisted balance is allowed).
+    HoldingCap,
+    /// The pending (proposed) holding cap awaiting 2-step acceptance.
+    HoldingCapCandidate,
 }
 
 #[contract]
