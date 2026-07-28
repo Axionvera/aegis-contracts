@@ -1,0 +1,223 @@
+use soroban_sdk::{contractimpl, contracttype, Address, Env};
+
+use crate::{AegisContract, DataKey, Role};
+
+// ─── Events ───────────────────────────────────────────────────────────────────
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct RoleAssignedEvent {
+    pub admin: Address,
+    pub target: Address,
+    pub role: Role,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct RoleRevokedEvent {
+    pub admin: Address,
+    pub target: Address,
+    pub role: Role,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct AdminTransferInitiatedEvent {
+    pub current_admin: Address,
+    pub candidate: Address,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct AdminTransferredEvent {
+    pub previous_admin: Address,
+    pub new_admin: Address,
+}
+
+// ─── Internal helpers ─────────────────────────────────────────────────────────
+
+/// Returns the current supreme admin address. Panics if not initialized.
+pub fn get_admin(env: &Env) -> Address {
+    env.storage()
+        .instance()
+        .get(&DataKey::Admin)
+        .expect("Admin not initialized")
+}
+
+/// Returns the role assigned to an address, or Role::None if unassigned.
+pub fn get_role(env: &Env, address: &Address) -> Role {
+    env.storage()
+        .persistent()
+        .get(&DataKey::Role(address.clone()))
+        .unwrap_or(Role::None)
+}
+
+/// Asserts that `caller` has the required `role` or is the supreme admin.
+/// Reverts with a descriptive message on failure.
+pub fn require_role(env: &Env, caller: &Address, required: Role) {
+    let role = get_role(env, caller);
+    let admin = get_admin(env);
+
+    // The supreme admin bypasses all role checks.
+    if *caller == admin {
+        return;
+    }
+
+    assert!(role == required, "Unauthorized: required role not held");
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+#[contractimpl]
+impl AegisContract {
+    /// Assigns a role to `target`. Only the supreme admin can call this.
+    pub fn set_role(env: Env, admin: Address, target: Address, role: Role) {
+        admin.require_auth();
+        assert_eq!(
+            admin,
+            get_admin(&env),
+            "Unauthorized: only admin can assign roles"
+        );
+
+        // Prevent assigning the Admin role to another address — use
+        // transfer_admin for a safe 2-step handoff instead.
+        assert_ne!(
+            role,
+            Role::Admin,
+            "Cannot assign Admin role via set_role; use transfer_admin"
+        );
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Role(target.clone()), &role);
+
+        env.events().publish(
+            ("role_assigned",),
+            RoleAssignedEvent {
+                admin,
+                target,
+                role,
+            },
+        );
+    }
+
+    /// Revokes the role from `target`, setting it to Role::None.
+    /// Only the supreme admin can call this.
+    pub fn remove_role(env: Env, admin: Address, target: Address) {
+        admin.require_auth();
+        assert_eq!(
+            admin,
+            get_admin(&env),
+            "Unauthorized: only admin can revoke roles"
+        );
+
+        let previous_role = get_role(&env, &target);
+        assert_ne!(previous_role, Role::None, "Target has no role to revoke");
+
+        env.storage()
+            .persistent()
+            .set(&DataKey::Role(target.clone()), &Role::None);
+
+        env.events().publish(
+            ("role_revoked",),
+            RoleRevokedEvent {
+                admin,
+                target,
+                role: previous_role,
+            },
+        );
+    }
+
+    /// Returns the role assigned to `address`.
+    pub fn get_role_of(env: Env, address: Address) -> Role {
+        get_role(&env, &address)
+    }
+
+    /// Initiates a 2-step admin transfer. Sets `candidate` as the pending new
+    /// admin. Only the current admin can call this.
+    pub fn transfer_admin(env: Env, admin: Address, candidate: Address) {
+        admin.require_auth();
+        assert_eq!(
+            admin,
+            get_admin(&env),
+            "Unauthorized: only admin can transfer admin"
+        );
+
+        env.storage()
+            .instance()
+            .set(&DataKey::AdminCandidate, &candidate);
+
+        env.events().publish(
+            ("admin_transfer_initiated",),
+            AdminTransferInitiatedEvent {
+                current_admin: admin,
+                candidate,
+            },
+        );
+    }
+
+    /// Completes a 2-step admin transfer. The `candidate` must call this to
+    /// accept the role. Only the pending candidate can call this.
+    pub fn accept_admin(env: Env, candidate: Address) {
+        candidate.require_auth();
+
+        let stored_candidate: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::AdminCandidate)
+            .expect("No pending admin transfer");
+
+        assert_eq!(
+            candidate, stored_candidate,
+            "Caller is not the pending admin candidate"
+        );
+
+        let previous_admin = get_admin(&env);
+
+        // Clear the candidate slot.
+        env.storage().instance().remove(&DataKey::AdminCandidate);
+
+        // Set the new admin.
+        env.storage().instance().set(&DataKey::Admin, &candidate);
+
+        // Transfer the Admin role: revoke from old, grant to new.
+        env.storage()
+            .persistent()
+            .set(&DataKey::Role(previous_admin.clone()), &Role::None);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Role(candidate.clone()), &Role::Admin);
+
+        env.events().publish(
+            ("admin_transferred",),
+            AdminTransferredEvent {
+                previous_admin,
+                new_admin: candidate,
+            },
+        );
+    }
+
+    /// The current admin can renounce their own admin role. This is an
+    /// irreversible action — use with caution.
+    pub fn renounce_admin(env: Env, admin: Address) {
+        admin.require_auth();
+        assert_eq!(
+            admin,
+            get_admin(&env),
+            "Unauthorized: only admin can renounce"
+        );
+
+        env.storage().instance().remove(&DataKey::Admin);
+        env.storage()
+            .persistent()
+            .set(&DataKey::Role(admin.clone()), &Role::None);
+
+        env.events().publish(
+            ("admin_renounced",),
+            AdminTransferredEvent {
+                previous_admin: admin,
+                new_admin: admin, // Self-renounced
+            },
+        );
+    }
+}
