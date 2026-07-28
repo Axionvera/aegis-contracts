@@ -69,7 +69,7 @@ value-encoding rules, and the no-real-user-data guarantee.
 - [Dashboard Integration Readiness Review](docs/dashboard-readiness-review.md) — API gaps, event limitations, and SEP-41 token compatibility risks for front-end integrations
 - [Dashboard Release Readiness Review (MVP)](docs/dashboard-release-readiness.md) — UI/UX gaps, test coverage requirements, and security flow risks for the dashboard application
 
-- [Requirement Traceability Mapping](docs/traceability-mapping.md) — mandatory traceability table format for contract changes and PRs
+- [Requirement Traceability Mapping](docs/traceability-mapping.md) — mandatory completion table format for PR acceptance criteria mapping, with status tracking and incomplete criteria handling
 - [Compliance Registry Reads and Indexing Strategy](docs/compliance-registry-reads.md) — supported point reads, event-indexed pagination, consistency guarantees, and dashboard/SDK boundaries
 - [Dashboard Integration Readiness Review](docs/dashboard-readiness-review.md) — API gaps, event limitations, and SEP-41 token compatibility risks for front-end integrations
 - [Dashboard Release Readiness Review (MVP)](docs/dashboard-release-readiness.md) — UI/UX gaps, test coverage requirements, and security flow risks for the dashboard application
