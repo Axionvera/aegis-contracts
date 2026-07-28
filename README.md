@@ -45,6 +45,7 @@ value-encoding rules, and the no-real-user-data guarantee.
 - [Admin Roles & Permissions](docs/admin-roles.md) — role-based access control (RBAC) design
 - [Admin Misuse Risks](docs/admin-misuse-risks.md) — threat model and mitigations
 - [Supply Cap Amendment Governance](docs/supply-cap-governance.md) — 2-step cap amendment workflow and enforcement
+- [Compliance Status Transitions](docs/compliance-status-transitions.md) — the approved/revoked/blocked/pending/unknown state machine, its transition matrix under authorised and unauthorised callers, and the invariant transition tests that guard it (audit readiness)
 
 ## Errors
 

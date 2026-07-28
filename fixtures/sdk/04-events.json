@@ -109,6 +109,24 @@
       ]
     },
     {
+      "id": "event-contract-initialized",
+      "description": "Topic `contract_initialized`, emitted once on single-initialization.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "contract_initialized",
+          "topics": [
+            "contract_initialized"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAUY29udHJhY3RfaW5pdGlhbGl6ZWQAAAARAAAAAQAAAAEAAAAPAAAABWFkbWluAAAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/w="
+        }
+      ]
+    },
+    {
       "id": "event-role-assigned",
       "description": "Topic `role_assigned`. The `role` field is a unit enum, encoded as a single-element vector holding the variant name.",
       "events": [

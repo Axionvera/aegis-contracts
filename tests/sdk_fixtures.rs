@@ -941,6 +941,11 @@ fn fixture_events() {
         let h = Harness::new();
         let c = h.client();
         c.initialize(&h.actor("admin"));
+        push_event(
+            "event-contract-initialized",
+            "Topic `contract_initialized`, emitted once on single-initialization.",
+            h.events(),
+        );
 
         c.set_role(
             &h.actor("admin"),

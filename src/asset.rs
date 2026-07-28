@@ -1,3 +1,8 @@
+// The legacy `Events::publish((topic,), payload)` API is used intentionally:
+// docs/events.md freezes these (topic, payload) shapes as a stable off-chain
+// contract, and src/test.rs asserts them exactly. Migrating to the
+// `#[contractevent]` macro must preserve every emitted shape byte-for-byte.
+#![allow(deprecated)]
 use soroban_sdk::{contractimpl, contracttype, Address, Env, String};
 
 use crate::admin::{require_not_paused, require_role};
@@ -106,7 +111,9 @@ impl AegisContract {
 
         env.storage().instance().set(&DataKey::AssetName, &name);
         env.storage().instance().set(&DataKey::AssetSymbol, &symbol);
-        env.storage().instance().set(&DataKey::AssetMetadataUri, &uri);
+        env.storage()
+            .instance()
+            .set(&DataKey::AssetMetadataUri, &uri);
 
         env.events().publish(
             ("asset_metadata_updated",),
