@@ -8,8 +8,8 @@ We welcome open-source contributions to make the Aegis Protocol more robust!
 3. **Branching:** Use `feat/`, `fix/`, or `chore/` prefixes.
 4. **Testing:** You MUST write unit tests in `src/test.rs` for any new logic added. PRs without test coverage will be rejected. Run them with `make test` — no network or Docker required.
 5. **Formatting:** Ensure `cargo fmt` and `cargo clippy` pass before opening a PR. `make ci` runs the complete gate (`fmt-check` + `clippy` + `test` + `build`) in one command.
-6. **Traceability:** You MUST include a [Traceability Mapping Table](docs/traceability-mapping.md) in your PR description, mapping every acceptance criterion to its implementation, storage changes, and tests.
-7. **Self-Review:** Before requesting review, self-review your PR against the [Reviewer Checklist](docs/reviewer-checklist.md) to catch issues early.
+6. **Self-Review:** Before requesting review, fill out the [Contributor Self-Review Form](docs/contributor-self-review-form.md) and include it in your PR. This covers requirements, implementation completeness, testing evidence, CI status, documentation updates, and known limitations.
+7. **Traceability:** You MUST include a [Traceability Mapping Table](docs/traceability-mapping.md) in your PR description, mapping every acceptance criterion to its implementation, storage changes, and tests.
 
 ## Discussion
 Join our ecosystem discussion before undertaking large architectural changes. Find the `// TODO:` comments in the source code for good places to start contributing.

@@ -14,7 +14,7 @@ Before you consider your contribution "done," verify:
 - [ ] **All acceptance criteria are satisfied** — mapped in your PR description (see [Acceptance Criteria Mapping](#acceptance-criteria-mapping))
 - [ ] **Implementation is meaningful** — not just stubs or comments (see [Meaningful Implementation Checklist](#meaningful-implementation-checklist))
 - [ ] **PR description is complete** — includes traceability table and context (see [PR Evidence Checklist](#pr-evidence-checklist))
-- [ ] **You've self-reviewed** — would you merge this yourself? (see [Self-Review](#self-review))
+- [ ] **You've self-reviewed** — complete the [Contributor Self-Review Form](./contributor-self-review-form.md) (see [Self-Review](#self-review))
 - [ ] **CI checks are green** — no failing automation (see [CI Workflow](#ci-workflow))
 
 ---
@@ -140,9 +140,12 @@ A contribution is meaningful when it changes **contract behavior** in a way that
 
 ## 6. Self-Review
 
-Before considering your contribution "done," review it as a maintainer would:
+Before considering your contribution "done", complete the
+**[Contributor Self-Review Form](./contributor-self-review-form.md)** — a
+structured checklist covering requirements, implementation completeness,
+testing evidence, CI status, documentation, and known limitations.
 
-### Quality checks:
+### Quick quality checks (supplement to the form):
 - [ ] Does it actually satisfy the issue's acceptance criteria?
 - [ ] Do `make build` and `make test` pass locally?
 - [ ] Is the code minimal, readable, and free of `#[allow]`-hidden warnings?
