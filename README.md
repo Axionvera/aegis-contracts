@@ -90,6 +90,7 @@ value-encoding rules, and the no-real-user-data guarantee.
 - [Payment-Period Conduct Note](docs/payment-period-conduct.md) — contributor expectations during paid periods: no spam, self-review, GrantFox evaluation, CI/testing
 - [Meaningful Implementation Checklist](docs/meaningful-implementation-checklist.md) — what counts as real contract work: behaviour, security, tests, events, acceptance criteria + reviewer checks
 - [Aegis Contracts Contribution Examples](docs/aegis-contracts-examples.md) — side-by-side comparisons of low-effort, partial, under-tested, failing-CI, and acceptable contributions (reference before opening a PR)
+- [Minimum Testing Standards](docs/testing-standards.md) — **mandatory** testing requirements per module, happy-path and negative-path expectations, integration fixtures, manual verification guidance, and no-test justification policy
 
 
 ## Contributing
