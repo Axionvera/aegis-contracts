@@ -1,6 +1,6 @@
-use soroban_sdk::{contractimpl, contracttype, Address, Env};
+use soroban_sdk::{contractimpl, contracttype, Address, Env, String};
 
-use crate::admin::{require_not_paused, require_role};
+use crate::admin::{require_any_role, require_not_paused, require_role};
 use crate::compliance;
 use crate::holding;
 use crate::supply_cap;
@@ -44,8 +44,159 @@ pub struct YieldDistributedEvent {
     pub amount: i128,
 }
 
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum AssetStatus {
+    Active,
+    Paused,
+    Retired,
+    Blocked,
+}
+
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AssetMetadata {
+    pub name: String,
+    pub symbol: String,
+    pub uri: String,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct AssetStatusChangedEvent {
+    pub caller: Address,
+    pub previous_status: AssetStatus,
+    pub new_status: AssetStatus,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct AssetMetadataUpdatedEvent {
+    pub caller: Address,
+    pub name: String,
+    pub symbol: String,
+    pub uri: String,
+}
+
+fn get_asset_status_internal(env: &Env) -> AssetStatus {
+    env.storage()
+        .instance()
+        .get(&DataKey::AssetStatus)
+        .unwrap_or(AssetStatus::Active)
+}
+
+fn transition_is_valid(from: &AssetStatus, to: &AssetStatus) -> bool {
+    if from == to {
+        return false;
+    }
+
+    match from {
+        AssetStatus::Active => {
+            matches!(to, AssetStatus::Paused | AssetStatus::Retired | AssetStatus::Blocked)
+        }
+        AssetStatus::Paused => {
+            matches!(to, AssetStatus::Active | AssetStatus::Retired | AssetStatus::Blocked)
+        }
+        AssetStatus::Retired => false,
+        AssetStatus::Blocked => matches!(to, AssetStatus::Active | AssetStatus::Retired),
+    }
+}
+
 #[contractimpl]
 impl AegisContract {
+    /// Returns the current lifecycle status for the asset (`Active` by default).
+    pub fn get_asset_status(env: Env) -> AssetStatus {
+        get_asset_status_internal(&env)
+    }
+
+    /// Updates asset lifecycle status.
+    /// Requires EmergencyOfficer role or Admin.
+    pub fn set_asset_status(
+        env: Env,
+        caller: Address,
+        new_status: AssetStatus,
+    ) -> Result<(), Error> {
+        caller.require_auth();
+        require_any_role(&env, &caller, &[Role::EmergencyOfficer]);
+
+        let current = get_asset_status_internal(&env);
+        if !transition_is_valid(&current, &new_status) {
+            return Err(Error::InvalidAssetStatusTransition);
+        }
+
+        env.storage()
+            .instance()
+            .set(&DataKey::AssetStatus, &new_status);
+
+        env.events().publish(
+            ("asset_status_changed",),
+            AssetStatusChangedEvent {
+                caller,
+                previous_status: current,
+                new_status,
+            },
+        );
+
+        Ok(())
+    }
+
+    /// Returns the current metadata snapshot for the asset.
+    pub fn get_asset_metadata(env: Env) -> AssetMetadata {
+        AssetMetadata {
+            name: env
+                .storage()
+                .instance()
+                .get(&DataKey::AssetName)
+                .unwrap_or(String::from_str(&env, "")),
+            symbol: env
+                .storage()
+                .instance()
+                .get(&DataKey::AssetSymbol)
+                .unwrap_or(String::from_str(&env, "")),
+            uri: env
+                .storage()
+                .instance()
+                .get(&DataKey::AssetMetadataUri)
+                .unwrap_or(String::from_str(&env, "")),
+        }
+    }
+
+    /// Updates asset metadata.
+    /// Requires AssetManager role or Admin.
+    /// Blocked in Retired/Blocked states.
+    pub fn update_asset_metadata(
+        env: Env,
+        caller: Address,
+        name: String,
+        symbol: String,
+        uri: String,
+    ) -> Result<(), Error> {
+        require_not_paused(&env);
+        caller.require_auth();
+        require_role(&env, &caller, Role::AssetManager);
+
+        let status = get_asset_status_internal(&env);
+        if matches!(status, AssetStatus::Retired | AssetStatus::Blocked) {
+            return Err(Error::AssetMetadataUpdateBlocked);
+        }
+
+        env.storage().instance().set(&DataKey::AssetName, &name);
+        env.storage().instance().set(&DataKey::AssetSymbol, &symbol);
+        env.storage().instance().set(&DataKey::AssetMetadataUri, &uri);
+
+        env.events().publish(
+            ("asset_metadata_updated",),
+            AssetMetadataUpdatedEvent {
+                caller,
+                name,
+                symbol,
+                uri,
+            },
+        );
+
+        Ok(())
+    }
+
     /// Mints new RWA tokens to a whitelisted address.
     /// Requires the AssetManager role or Admin.
     /// Blocked when the contract is paused.
@@ -55,6 +206,9 @@ impl AegisContract {
         require_role(&env, &admin, Role::AssetManager);
         if amount <= 0 {
             return Err(Error::InvalidAmount);
+        }
+        if get_asset_status_internal(&env) != AssetStatus::Active {
+            return Err(Error::AssetNotActive);
         }
 
         if !compliance::is_whitelisted(&env, &to) {
@@ -110,6 +264,9 @@ impl AegisContract {
         from.require_auth();
         if amount <= 0 {
             return Err(Error::InvalidAmount);
+        }
+        if get_asset_status_internal(&env) != AssetStatus::Active {
+            return Err(Error::AssetNotActive);
         }
 
         if !compliance::is_whitelisted(&env, &from) {

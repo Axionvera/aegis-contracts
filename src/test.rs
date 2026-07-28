@@ -1,13 +1,13 @@
 #![cfg(test)]
 
 use super::*;
-use crate::asset::{AssetMintedEvent, TransferEvent, YieldDistributedEvent};
+use crate::asset::{AssetMintedEvent, AssetStatus, TransferEvent, YieldDistributedEvent};
 use crate::compliance::{UserWhitelistedEvent, WhitelistRevokedEvent};
 use crate::eligibility::InvestorEligibility;
 use crate::errors::Error;
 use soroban_sdk::{
     testutils::{Address as _, Events as _},
-    vec, Address, Env, IntoVal,
+    vec, Address, Env, IntoVal, String,
 };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -1169,6 +1169,218 @@ fn test_supply_cap_overflow_like_mint_keeps_state_consistent() {
     assert!(r.is_err());
     assert_eq!(client.get_total_supply(), i128::MAX);
     assert_eq!(client.get_balance_of(&user2), i128::MAX);
+}
+
+// ─── Asset lifecycle invariants (#55) ─────────────────────────────────────────
+
+#[test]
+fn test_asset_lifecycle_defaults_to_active() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    assert_eq!(client.get_asset_status(), AssetStatus::Active);
+}
+
+#[test]
+fn test_asset_lifecycle_wrong_caller_transition_rejected() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+
+    // user1 has no emergency/admin privileges for lifecycle transitions.
+    let r = client.try_set_asset_status(&user1, &AssetStatus::Paused);
+    assert_eq!(r, Err(Ok(Error::Unauthorized)));
+    assert_eq!(client.get_asset_status(), AssetStatus::Active);
+}
+
+#[test]
+fn test_asset_lifecycle_invalid_transition_rejected_with_state_consistency() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Retired);
+    assert_eq!(client.get_asset_status(), AssetStatus::Retired);
+
+    // Retired is terminal in the lifecycle model.
+    let r = client.try_set_asset_status(&admin, &AssetStatus::Active);
+    assert_eq!(r, Err(Ok(Error::InvalidAssetStatusTransition)));
+    assert_eq!(client.get_asset_status(), AssetStatus::Retired);
+}
+
+#[test]
+fn test_asset_paused_blocks_mint_and_transfer_with_unchanged_state() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&user1, &user1, &500);
+
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+
+    let supply_before = client.get_total_supply();
+    let user1_before = client.get_balance_of(&user1);
+    let user2_before = client.get_balance_of(&user2);
+
+    let mint_r = client.try_mint_asset(&user1, &user2, &10);
+    assert_eq!(mint_r, Err(Ok(Error::AssetNotActive)));
+
+    let transfer_r = client.try_transfer(&user1, &user2, &10);
+    assert_eq!(transfer_r, Err(Ok(Error::AssetNotActive)));
+
+    // Failed operations must not mutate balances/supply.
+    assert_eq!(client.get_total_supply(), supply_before);
+    assert_eq!(client.get_balance_of(&user1), user1_before);
+    assert_eq!(client.get_balance_of(&user2), user2_before);
+}
+
+#[test]
+fn test_asset_retired_blocks_mint_transfer_and_metadata_update() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&user1, &user1, &200);
+
+    client.set_asset_status(&admin, &AssetStatus::Retired);
+    let supply_before = client.get_total_supply();
+    let user1_before = client.get_balance_of(&user1);
+    let user2_before = client.get_balance_of(&user2);
+    let metadata_before = client.get_asset_metadata();
+
+    let mint_r = client.try_mint_asset(&user1, &user2, &1);
+    assert_eq!(mint_r, Err(Ok(Error::AssetNotActive)));
+
+    let transfer_r = client.try_transfer(&user1, &user2, &1);
+    assert_eq!(transfer_r, Err(Ok(Error::AssetNotActive)));
+
+    let metadata_r = client.try_update_asset_metadata(
+        &user1,
+        &String::from_str(&env, "Retired Name"),
+        &String::from_str(&env, "RET"),
+        &String::from_str(&env, "ipfs://retired"),
+    );
+    assert_eq!(metadata_r, Err(Ok(Error::AssetMetadataUpdateBlocked)));
+
+    // Failed operations keep all tracked state unchanged.
+    assert_eq!(client.get_total_supply(), supply_before);
+    assert_eq!(client.get_balance_of(&user1), user1_before);
+    assert_eq!(client.get_balance_of(&user2), user2_before);
+    assert_eq!(client.get_asset_metadata(), metadata_before);
+}
+
+#[test]
+fn test_asset_blocked_blocks_mint_and_transfer() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&user1, &user1, &100);
+
+    client.set_asset_status(&admin, &AssetStatus::Blocked);
+    let supply_before = client.get_total_supply();
+    let user1_before = client.get_balance_of(&user1);
+    let user2_before = client.get_balance_of(&user2);
+    let metadata_before = client.get_asset_metadata();
+
+    let mint_r = client.try_mint_asset(&user1, &user2, &10);
+    assert_eq!(mint_r, Err(Ok(Error::AssetNotActive)));
+
+    let transfer_r = client.try_transfer(&user1, &user2, &10);
+    assert_eq!(transfer_r, Err(Ok(Error::AssetNotActive)));
+
+    let metadata_r = client.try_update_asset_metadata(
+        &user1,
+        &String::from_str(&env, "Blocked Name"),
+        &String::from_str(&env, "BLK"),
+        &String::from_str(&env, "ipfs://blocked"),
+    );
+    assert_eq!(metadata_r, Err(Ok(Error::AssetMetadataUpdateBlocked)));
+
+    assert_eq!(client.get_total_supply(), supply_before);
+    assert_eq!(client.get_balance_of(&user1), user1_before);
+    assert_eq!(client.get_balance_of(&user2), user2_before);
+    assert_eq!(client.get_asset_metadata(), metadata_before);
+}
+
+#[test]
+fn test_asset_metadata_update_allowed_in_active_and_paused() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+
+    let r = client.try_update_asset_metadata(
+        &user1,
+        &String::from_str(&env, "Aegis Real Estate Trust"),
+        &String::from_str(&env, "AERT"),
+        &String::from_str(&env, "ipfs://aegis/asset/1"),
+    );
+    assert!(r.is_ok());
+
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+    let r = client.try_update_asset_metadata(
+        &user1,
+        &String::from_str(&env, "Aegis Real Estate Trust v2"),
+        &String::from_str(&env, "AERT"),
+        &String::from_str(&env, "ipfs://aegis/asset/2"),
+    );
+    assert!(r.is_ok());
+}
+
+#[test]
+fn test_asset_admin_transfer_still_works_when_asset_paused() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Paused);
+
+    // Asset lifecycle pause restricts mint/transfer, but governance can still
+    // rotate admin keys for operational recovery.
+    let r = client.try_transfer_admin(&admin, &user1);
+    assert!(r.is_ok());
+    let r = client.try_accept_admin(&user1);
+    assert!(r.is_ok());
+    assert_eq!(client.get_role_of(&user1), Role::Admin);
+}
+
+#[test]
+fn test_asset_admin_transfer_still_works_when_asset_blocked_or_retired() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Blocked);
+
+    // Governance/admin changes are still allowed in blocked status.
+    let r = client.try_transfer_admin(&admin, &user1);
+    assert!(r.is_ok());
+    let r = client.try_accept_admin(&user1);
+    assert!(r.is_ok());
+    assert_eq!(client.get_role_of(&user1), Role::Admin);
+
+    client.set_asset_status(&user1, &AssetStatus::Retired);
+    assert_eq!(client.get_asset_status(), AssetStatus::Retired);
+
+    // Governance/admin changes are still allowed in retired status.
+    let r = client.try_transfer_admin(&user1, &user2);
+    assert!(r.is_ok());
+    let r = client.try_accept_admin(&user2);
+    assert!(r.is_ok());
+    assert_eq!(client.get_role_of(&user2), Role::Admin);
 }
 
 // ─── Investor holding restriction checks (#33) ───────────────────────────────
