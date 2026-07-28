@@ -30,5 +30,9 @@ Run the comprehensive test suite locally:
 - [Admin Roles & Permissions](docs/admin-roles.md) — role-based access control (RBAC) design
 - [Admin Misuse Risks](docs/admin-misuse-risks.md) — threat model and mitigations
 
+## CI & Contributing
+
+- [Failing CI Response Guide](docs/failing-ci-guide.md) — how to reproduce and fix Rust, Soroban, Makefile, dependency, and workflow failures (failing checks can block approval)
+
 ## Contributing
 Please see CONTRIBUTING.md for guidelines on how to submit pull requests, branch naming conventions, and testing requirements.
