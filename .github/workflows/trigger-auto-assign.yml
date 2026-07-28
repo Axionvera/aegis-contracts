@@ -13,7 +13,7 @@ jobs:
     name: Trigger central auto-assign
     runs-on: ubuntu-latest
 
-    if: ${{ !github.event.issue.pull_request }}
+    if: ${{ !github.event.issue.pull_request && github.event.comment.user.type != 'Bot' }}
 
     steps:
       - name: Trigger automation repo
@@ -27,5 +27,4 @@ jobs:
             -f event_type=axionvera-issue-application \
             -F client_payload[repo]="${{ github.repository }}" \
             -F client_payload[issue_number]="${{ github.event.issue.number }}" \
-            -F client_payload[applicant]="${{ github.event.comment.user.login }}" \
-            -F client_payload[comment_body]="${{ github.event.comment.body }}"
+            -F client_payload[applicant]="${{ github.event.comment.user.login }}"
