@@ -1,7 +1,7 @@
 use soroban_sdk::{contractimpl, contracttype, Address, Env};
 
 use crate::admin::{get_admin, require_not_paused};
-use crate::{AegisContract, DataKey};
+use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey};
 
 // ─── Events ───────────────────────────────────────────────────────────────────
 

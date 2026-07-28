@@ -1,10 +1,49 @@
-use soroban_sdk::{contractimpl, Address, Env};
+use soroban_sdk::{contractimpl, contracttype, Address, Env};
 
 use crate::admin::{require_not_paused, require_role};
 use crate::compliance;
 use crate::holding;
 use crate::supply_cap;
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error, Role};
+
+// ─── Events ───────────────────────────────────────────────────────────────────
+
+/// Emitted when new RWA units are minted to a whitelisted address. This is
+/// the canonical asset-issuance event: the protocol does not model a
+/// separate "asset registration" step distinct from minting (see
+/// `docs/events.md` for the scope note), so dashboards and indexers should
+/// treat `AssetMintedEvent` as marking both the issuance and, for a
+/// recipient's first mint, its effective registration as an asset holder.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct AssetMintedEvent {
+    pub caller: Address,
+    pub to: Address,
+    pub amount: i128,
+    pub total_supply: i128,
+}
+
+/// Emitted on every successful transfer between two whitelisted addresses.
+/// Soroban discards events from reverted invocations, so a transfer blocked
+/// by `SenderNotWhitelisted` / `ReceiverNotWhitelisted` never reaches this
+/// point and emits no event — the standardized error code itself is the
+/// off-chain-observable signal for a compliance-restricted transfer. See
+/// `docs/events.md` for details.
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct TransferEvent {
+    pub from: Address,
+    pub to: Address,
+    pub amount: i128,
+}
+
+#[contracttype]
+#[derive(Clone, Debug)]
+pub struct YieldDistributedEvent {
+    pub caller: Address,
+    pub amount: i128,
+}
+
 #[contractimpl]
 impl AegisContract {
     /// Mints new RWA tokens to a whitelisted address.
@@ -41,7 +80,7 @@ impl AegisContract {
         balance += amount;
         env.storage()
             .persistent()
-            .set(&DataKey::Balance(to), &balance);
+            .set(&DataKey::Balance(to.clone()), &balance);
 
         let mut supply: i128 = env
             .storage()
@@ -50,6 +89,16 @@ impl AegisContract {
             .unwrap_or(0);
         supply += amount;
         env.storage().instance().set(&DataKey::TotalSupply, &supply);
+
+        env.events().publish(
+            ("asset_minted",),
+            AssetMintedEvent {
+                caller: admin,
+                to,
+                amount,
+                total_supply: supply,
+            },
+        );
 
         Ok(())
     }
@@ -88,7 +137,7 @@ impl AegisContract {
         from_balance -= amount;
         env.storage()
             .persistent()
-            .set(&DataKey::Balance(from), &from_balance);
+            .set(&DataKey::Balance(from.clone()), &from_balance);
 
         let mut to_balance: i128 = env
             .storage()
@@ -98,7 +147,10 @@ impl AegisContract {
         to_balance += amount;
         env.storage()
             .persistent()
-            .set(&DataKey::Balance(to), &to_balance);
+            .set(&DataKey::Balance(to.clone()), &to_balance);
+
+        env.events()
+            .publish(("transfer",), TransferEvent { from, to, amount });
 
         Ok(())
     }
@@ -118,6 +170,14 @@ impl AegisContract {
         // snapshotting balances or utilizing a claim-based dividend pull pattern
         // rather than iterating over maps to avoid gas limits.
         // TODO: Implement scalable yield snapshot mechanism
+
+        env.events().publish(
+            ("yield_distributed",),
+            YieldDistributedEvent {
+                caller: admin,
+                amount,
+            },
+        );
 
         Ok(())
     }
