@@ -4,6 +4,14 @@
 ## Related Issues
 <!-- Link to any related issues (e.g., Fixes #123) -->
 
+## Traceability Mapping
+<!-- Please map your changes to the issue's acceptance criteria using the table below. See docs/traceability-mapping.md for details and examples. -->
+
+| Acceptance Criteria | Implementation | Storage & State Changes | Events Emitted | Test Coverage | Security/Safety Controls |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **AC 1**: | | | | | |
+| **AC 2**: | | | | | |
+
 ## Type of Change
 - [ ] Bug fix (non-breaking change which fixes an issue)
 - [ ] New feature (non-breaking change which adds functionality)
