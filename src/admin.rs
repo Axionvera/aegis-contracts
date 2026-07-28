@@ -1,3 +1,8 @@
+// The legacy `Events::publish((topic,), payload)` API is used intentionally:
+// docs/events.md freezes these (topic, payload) shapes as a stable off-chain
+// contract, and src/test.rs asserts them exactly. Migrating to the
+// `#[contractevent]` macro must preserve every emitted shape byte-for-byte.
+#![allow(deprecated)]
 use soroban_sdk::{contractimpl, contracttype, panic_with_error, Address, Env};
 
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error, Role};

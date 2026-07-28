@@ -1,3 +1,8 @@
+// The legacy `Events::publish((topic,), payload)` API is used intentionally:
+// docs/events.md freezes these (topic, payload) shapes as a stable off-chain
+// contract, and src/test.rs asserts them exactly. Migrating to the
+// `#[contractevent]` macro must preserve every emitted shape byte-for-byte.
+#![allow(deprecated)]
 use soroban_sdk::{contractimpl, contracttype, Address, Env};
 
 use crate::admin::{get_admin, require_not_paused};
@@ -140,7 +145,9 @@ impl AegisContract {
         let previous = get_supply_cap(&env);
 
         // Clear the proposal slot so it cannot be re-accepted.
-        env.storage().instance().remove(&DataKey::SupplyCapCandidate);
+        env.storage()
+            .instance()
+            .remove(&DataKey::SupplyCapCandidate);
         env.storage().instance().set(&DataKey::SupplyCap, &proposed);
 
         env.events().publish(
@@ -166,12 +173,11 @@ impl AegisContract {
             "Unauthorized: only admin can cancel a supply cap proposal"
         );
 
-        let had = env
-            .storage()
-            .instance()
-            .has(&DataKey::SupplyCapCandidate);
+        let had = env.storage().instance().has(&DataKey::SupplyCapCandidate);
         assert!(had, "No pending supply cap proposal to cancel");
 
-        env.storage().instance().remove(&DataKey::SupplyCapCandidate);
+        env.storage()
+            .instance()
+            .remove(&DataKey::SupplyCapCandidate);
     }
 }

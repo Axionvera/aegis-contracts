@@ -47,6 +47,12 @@ name, never on struct declaration order or Rust type layout.**
 | `transfer`                    | `TransferEvent`              | `asset.rs`      | `transfer`                                      | `from: Address`, `to: Address`, `amount: i128` |
 | `yield_distributed`           | `YieldDistributedEvent`      | `asset.rs`      | `distribute_yield`                              | `caller: Address`, `amount: i128` |
 
+> **Compliance transitions:** the authorisation, blocked (paused), and
+> idempotence semantics that determine *when* `user_whitelisted` /
+> `whitelist_revoked` are emitted — and the invariant tests asserting that
+> rejected transitions emit nothing — are defined in
+> [`compliance-status-transitions.md`](compliance-status-transitions.md).
+
 ## Scope notes
 
 ### Asset registration vs. minting
