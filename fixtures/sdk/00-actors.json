@@ -1,0 +1,68 @@
+{
+  "$schema_version": 1,
+  "fixture": "00-actors",
+  "purpose": "Synthetic identity table shared by all Aegis SDK fixtures.",
+  "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+  "generator": "tests/sdk_fixtures.rs (cargo test --test sdk_fixtures)",
+  "notes": [
+    "Generated from live contract invocations in the Soroban test host; values are rendered from wire-level ScVal/XDR, never hand-written.",
+    "All addresses are synthetic, derived from SHA-256(\"aegis-fixture/<label>\"). They have no private keys and contain no real user data.",
+    "128-bit and 64-bit integers are encoded as decimal strings to stay lossless in JSON consumers that use IEEE-754 numbers."
+  ],
+  "scenarios": [
+    {
+      "id": "synthetic-identities",
+      "description": "Fixed, synthetic addresses used by every fixture in this directory.",
+      "derivation": "aegis-fixture/<label>",
+      "derivation_detail": "Ed25519 public key bytes = SHA-256 of the UTF-8 seed string; encoded as a Stellar strkey (G… for accounts, C… for the contract).",
+      "privacy": "No private keys exist for these addresses, they are unfunded on all networks, and they correspond to no real person or account.",
+      "actors": [
+        {
+          "label": "admin",
+          "address": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
+          "kind": "account"
+        },
+        {
+          "label": "compliance_officer",
+          "address": "GAEGCFR5CC2J5E5FVFDOJJS4TGNCBWTDMNILRHETSHDWXOXIOFWA25JU",
+          "kind": "account"
+        },
+        {
+          "label": "asset_manager",
+          "address": "GBL2V6RSU2K6U3C73HDQOCVWBCQ7H7ZJY6RECEHIUHSZ7M6736CDPBMO",
+          "kind": "account"
+        },
+        {
+          "label": "emergency_officer",
+          "address": "GBLPHF3QVD22643G67KSIPOHI2OY5UDQJAW4XKNOZABV2HDXITYQ34FV",
+          "kind": "account"
+        },
+        {
+          "label": "investor_alice",
+          "address": "GAXRVA67D5NLMKP6H5IROF3IY5EMQW6AQBJLTUITGAAZUXMGY7CYO2KG",
+          "kind": "account"
+        },
+        {
+          "label": "investor_bob",
+          "address": "GD4YM2BO77TT5BMWZC7SMH74GWZ5TPTKVTGPW5X6VUKFXLLD6W3XPRYN",
+          "kind": "account"
+        },
+        {
+          "label": "investor_carol",
+          "address": "GCETMP6KNA4OB27H554CJJURJ7W2FCWJZUG3PCMC2DM73FVIARPHCMH2",
+          "kind": "account"
+        },
+        {
+          "label": "outsider_dave",
+          "address": "GDEEAPLXZWKS57XMNUD4D4AEWEGKUZUKTRJRCCVA7JEAL6YREHN4BR2F",
+          "kind": "account"
+        },
+        {
+          "label": "contract",
+          "address": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "kind": "contract"
+        }
+      ]
+    }
+  ]
+}
