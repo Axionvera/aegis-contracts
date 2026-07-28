@@ -98,6 +98,7 @@ Every target honours the variables in `.env` and accepts inline overrides, e.g.
 ## Contributor Guides
 
 - [Local Deployment Guide](docs/local-deployment.md) — deployment assumptions, environment variables, Makefile reference, Soroban CLI usage, and common errors
+- [Reviewer Checklist](docs/reviewer-checklist.md) — standardized quality and security checklist for PR reviewers
 - [Contributor Experience Review](docs/contributor-experience-review.md) — known onboarding friction and follow-up items
 
 ## Contributing
