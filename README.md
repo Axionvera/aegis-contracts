@@ -54,7 +54,11 @@ value-encoding rules, and the no-real-user-data guarantee.
 ## Errors
 
 - [Contract Error Code Standard](docs/error-codes.md) — standardized error codes for compliance, admin, minting, transfer, and storage failures, plus SDK/dashboard mapping guidance
+
+- [Transfer Restriction Reason Codes](docs/transfer-restrictions.md) — granular blocked-transfer reasons (non-compliant sender/recipient, paused/retired/blocked asset, cap breaches, unauthorised operation), pre-flight reason reads, and the SDK/dashboard mapping contract
+
 - [SDK Integration Fixtures](docs/sdk-fixtures.md) — deterministic example outputs for compliance, minting, transfer, event, error, and capability scenarios, for cross-repo testing
+
 
 - [Investor Holding Restriction Checks](docs/investor-holding-restrictions.md) — per-investor holding cap workflow and enforcement
 

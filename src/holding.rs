@@ -50,7 +50,9 @@ pub fn get_pending_holding_cap(env: &Env) -> Option<i128> {
 /// Enforces the per-investor holding cap after `address` is credited with
 /// `incoming` tokens.
 ///
-/// Reverts if a cap is set (`> 0`) and the resulting balance would exceed it.
+/// Returns `Err(Error::HoldingCapExceeded)` (code 7003) if a cap is set (`> 0`)
+/// and the resulting balance would exceed it, so callers surface a specific
+/// restriction reason instead of a generic host panic.
 /// A cap of `0` is treated as "unrestricted" and never blocks. The check is
 /// performed on the *resulting* balance so it applies uniformly to both
 /// minting (crediting a new holder) and transfers (crediting a receiver).
@@ -59,16 +61,22 @@ pub fn get_pending_holding_cap(env: &Env) -> Option<i128> {
 /// retroactively clamp existing balances; if the cap is lowered below a
 /// holder's current balance, that holder simply cannot receive further
 /// tokens until their balance falls (via transfers out) or the cap is raised.
-pub fn enforce_holding_cap(env: &Env, address: &Address, incoming: i128) {
+pub fn enforce_holding_cap(env: &Env, address: &Address, incoming: i128) -> Result<(), Error> {
     let cap = get_holding_cap(env);
     if cap <= 0 {
-        return;
+        return Ok(());
     }
     let balance: i128 = env
         .storage()
         .persistent()
         .get(&DataKey::Balance(address.clone()))
         .unwrap_or(0);
+
+    if balance + incoming > cap {
+        return Err(Error::HoldingCapExceeded);
+    }
+    Ok(())
+
     // Overflow-safe check: if balance already exceeds cap, any positive incoming fails.
     if balance > cap {
         panic_with_error!(env, Error::HoldingCapExceeded);
@@ -83,6 +91,7 @@ pub fn enforce_holding_cap(env: &Env, address: &Address, incoming: i128) {
     if new_balance > cap {
         panic_with_error!(env, Error::HoldingCapExceeded);
     }
+
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────

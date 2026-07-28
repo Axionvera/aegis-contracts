@@ -6,7 +6,11 @@ pub mod compliance;
 pub mod eligibility;
 pub mod errors;
 pub mod holding;
+
+pub mod restrictions;
+
 pub mod lifecycle;
+
 pub mod supply_cap;
 #[cfg(test)]
 mod test;

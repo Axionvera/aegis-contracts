@@ -48,23 +48,29 @@ pub fn get_pending_supply_cap(env: &Env) -> Option<i128> {
 
 /// Enforces the active supply cap before a mint of `mint_amount`.
 ///
-/// Reverts if a cap is set (`> 0`) and the resulting total supply would
-/// exceed it. A cap of `0` is treated as "unbounded" and never blocks.
+/// Returns `Err(Error::SupplyCapExceeded)` (code 7004) if a cap is set (`> 0`)
+/// and the resulting total supply would exceed it. A cap of `0` is treated as "unbounded" and never blocks.
 ///
 /// Note: this only constrains *future* minting. If the cap is later lowered
 /// below the current total supply, existing supply is not burned; mints that
 /// would push supply above the new cap simply fail until supply falls (via
 /// burns/transfers out) or the cap is raised.
-pub fn enforce_supply_cap(env: &Env, mint_amount: i128) {
+pub fn enforce_supply_cap(env: &Env, mint_amount: i128) -> Result<(), Error> {
     let cap = get_supply_cap(env);
     if cap <= 0 {
-        return;
+        return Ok(());
     }
     let supply: i128 = env
         .storage()
         .instance()
         .get(&DataKey::TotalSupply)
         .unwrap_or(0);
+
+    if supply + mint_amount > cap {
+        return Err(Error::SupplyCapExceeded);
+    }
+    Ok(())
+
     // Overflow-safe check: if supply already exceeds cap, any positive mint fails.
     if supply > cap {
         panic_with_error!(env, Error::SupplyCapExceeded);
@@ -79,6 +85,7 @@ pub fn enforce_supply_cap(env: &Env, mint_amount: i128) {
     if new_supply > cap {
         panic_with_error!(env, Error::SupplyCapExceeded);
     }
+
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────

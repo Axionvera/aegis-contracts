@@ -73,6 +73,42 @@ pub enum Error {
     /// The investor's balance would exceed the active holding cap.
     HoldingCapExceeded = 5003,
     // ─── 6000s: Asset Metadata ──────────────────────────────────────────────
+
+    // Reserved for future asset-metadata validation errors (name, symbol,
+    // decimals, schema checks). No active failure paths use this range yet.
+    /// **Reserved / legacy.** Previously returned by `transfer` and
+    /// `mint_asset` whenever the asset was not `Active`, collapsing three
+    /// distinct states into one code. Superseded by the granular
+    /// `AssetPausedRestriction` (7000), `AssetRetiredRestriction` (7001), and
+    /// `AssetBlockedRestriction` (7002). Kept — never reused, never
+    /// renumbered — so clients that cached it keep a stable meaning.
+    AssetNotActive = 6000,
+    /// Asset status transition is not allowed by lifecycle rules.
+    InvalidAssetStatusTransition = 6001,
+    /// Metadata update is blocked in the current lifecycle status.
+    AssetMetadataUpdateBlocked = 6002,
+
+    // ─── 7000s: Transfer / Movement Restrictions ────────────────────────────
+    // Granular reasons for a blocked asset movement (transfer or mint). Each
+    // code maps 1:1 onto a `RestrictionReason` variant in
+    // `src/restrictions.rs`, so SDKs and dashboards can render a precise
+    // explanation instead of a generic "transaction failed". See
+    // `docs/transfer-restrictions.md`.
+    /// The asset lifecycle status is `Paused`: movements are temporarily
+    /// suspended for this asset and may resume if it returns to `Active`.
+    AssetPausedRestriction = 7000,
+    /// The asset lifecycle status is `Retired`: this is terminal, no future
+    /// movement of this asset will ever be permitted.
+    AssetRetiredRestriction = 7001,
+    /// The asset lifecycle status is `Blocked`: movements are administratively
+    /// blocked (e.g. a regulatory hold) pending review.
+    AssetBlockedRestriction = 7002,
+    /// Crediting the recipient would push their balance above the active
+    /// per-investor holding cap.
+    HoldingCapExceeded = 7003,
+    /// The mint would push total supply above the active global supply cap.
+    SupplyCapExceeded = 7004,
+
     /// Metadata update is blocked in the current lifecycle status
     /// (asset is Retired or Blocked).
     AssetMetadataUpdateBlocked = 6002,
@@ -91,4 +127,5 @@ pub enum Error {
     AssetBlocked = 7003,
     /// The requested lifecycle transition is not valid from the current status.
     InvalidLifecycleTransition = 7004,
+
 }
