@@ -26,6 +26,7 @@ Run the comprehensive test suite locally:
    ```
 ## Security
 
+- [RWA Protocol Threat Model](docs/threat-model.md) — protected assets, trust boundaries, threat catalog (compliance bypass, admin/role misuse, minting and transfer risks, pause misuse, event reliability), and explicit off-chain/legal out-of-scope items
 - [Emergency Pause Policy](docs/emergency-pause.md) — global pause mechanism, authorization, and trust model
 - [Admin Roles & Permissions](docs/admin-roles.md) — role-based access control (RBAC) design
 - [Admin Misuse Risks](docs/admin-misuse-risks.md) — threat model and mitigations
