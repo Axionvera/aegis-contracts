@@ -2,7 +2,8 @@
 
 > Every revert below is a standardized `Error` code, not a message string.
 > See [`docs/error-codes.md`](error-codes.md) for the full code table and
-> SDK/dashboard mapping guidance.
+> SDK/dashboard mapping guidance. See [`docs/events.md`](events.md) for the
+> full event topic/payload schema and compatibility guarantees.
 
 ## Initialization
 
@@ -28,14 +29,14 @@ Any call above made before `initialize` reverts with `NotInitialized`.
 
 ## Compliance (compliance.rs)
 
-* `whitelist_user(env, admin, user)`: Adds `user` to the persistent compliance map. Requires ComplianceOfficer role (or Admin) (`Unauthorized`). Blocked when paused (`ContractPaused`).
-* `revoke_whitelist(env, admin, user)`: Removes `user` from the compliance whitelist. Requires ComplianceOfficer role (or Admin) (`Unauthorized`). Blocked when paused (`ContractPaused`).
+* `whitelist_user(env, admin, user)`: Adds `user` to the persistent compliance map. Requires ComplianceOfficer role (or Admin) (`Unauthorized`). Blocked when paused (`ContractPaused`). Emits `UserWhitelistedEvent`.
+* `revoke_whitelist(env, admin, user)`: Removes `user` from the compliance whitelist. Requires ComplianceOfficer role (or Admin) (`Unauthorized`). Blocked when paused (`ContractPaused`). Emits `WhitelistRevokedEvent`.
 
 ## Asset Operations (asset.rs)
 
-* `mint_asset(env, admin, to, amount)`: Mints `amount` to `to`. Requires AssetManager role (or Admin) (`Unauthorized`). Reverts with `InvalidAmount` if `amount <= 0`, or `ReceiverNotWhitelisted` if `to` is not whitelisted. Blocked when paused (`ContractPaused`).
-* `transfer(env, from, to, amount)`: Moves `amount` between addresses. Requires `from` auth. Reverts with `InvalidAmount` if `amount <= 0`; `SenderNotWhitelisted` or `ReceiverNotWhitelisted` if either party is not whitelisted; `InsufficientBalance` if `from` cannot cover `amount`. Blocked when paused (`ContractPaused`).
-* `distribute_yield(env, admin, amount)`: Triggers a dividend yield event for off-chain indexing. Requires AssetManager role (or Admin) (`Unauthorized`). Reverts with `InvalidAmount` if `amount <= 0`. Blocked when paused (`ContractPaused`).
+* `mint_asset(env, admin, to, amount)`: Mints `amount` to `to`. Requires AssetManager role (or Admin) (`Unauthorized`). Reverts with `InvalidAmount` if `amount <= 0`, or `ReceiverNotWhitelisted` if `to` is not whitelisted. Blocked when paused (`ContractPaused`). Emits `AssetMintedEvent` (includes the running `total_supply`).
+* `transfer(env, from, to, amount)`: Moves `amount` between addresses. Requires `from` auth. Reverts with `InvalidAmount` if `amount <= 0`; `SenderNotWhitelisted` or `ReceiverNotWhitelisted` if either party is not whitelisted; `InsufficientBalance` if `from` cannot cover `amount`. Blocked when paused (`ContractPaused`). Emits `TransferEvent` on success only — a compliance-blocked transfer reverts and emits nothing; see [`docs/events.md`](events.md#transfer-restriction-events).
+* `distribute_yield(env, admin, amount)`: Triggers a dividend yield event for off-chain indexing. Requires AssetManager role (or Admin) (`Unauthorized`). Reverts with `InvalidAmount` if `amount <= 0`. Blocked when paused (`ContractPaused`). Emits `YieldDistributedEvent`.
 
 ## Read Functions
 

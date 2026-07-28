@@ -1,8 +1,13 @@
 #![cfg(test)]
 
 use super::*;
+use crate::asset::{AssetMintedEvent, TransferEvent, YieldDistributedEvent};
+use crate::compliance::{UserWhitelistedEvent, WhitelistRevokedEvent};
 use crate::errors::Error;
-use soroban_sdk::{testutils::Address as _, Address, Env};
+use soroban_sdk::{
+    testutils::{Address as _, Events as _},
+    vec, Address, Env, IntoVal,
+};
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -785,4 +790,174 @@ fn test_pause_unpause_full_lifecycle() {
     client.transfer(&user1, &user2, &100);
     assert_eq!(client.get_balance_of(&user1), 1150);
     assert_eq!(client.get_balance_of(&user2), 350);
+}
+
+// ─── Event compatibility: compliance & minting ────────────────────────────────
+//
+// These tests lock down the exact topic and payload shape of each event so
+// that downstream SDKs, dashboards, and indexers relying on this contract's
+// event schema get a compile-time-checked regression signal if the shape
+// ever drifts. `env.events().all()` returns only the events published by the
+// most recent top-level invocation, so each test calls the action under
+// test as the last client call before asserting.
+
+#[test]
+fn test_whitelist_user_emits_event() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user1);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("user_whitelisted",).into_val(&env),
+                UserWhitelistedEvent {
+                    caller: admin,
+                    user: user1,
+                }
+                .into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_revoke_whitelist_emits_event() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user1);
+    client.revoke_whitelist(&admin, &user1);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("whitelist_revoked",).into_val(&env),
+                WhitelistRevokedEvent {
+                    caller: admin,
+                    user: user1,
+                }
+                .into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_mint_asset_emits_event_with_running_supply() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user2);
+
+    // First mint establishes a baseline supply.
+    client.mint_asset(&user1, &user2, &400);
+
+    // Second mint's event should reflect the *cumulative* total supply, not
+    // just the minted amount.
+    client.mint_asset(&user1, &user2, &600);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("asset_minted",).into_val(&env),
+                AssetMintedEvent {
+                    caller: user1,
+                    to: user2,
+                    amount: 600,
+                    total_supply: 1000,
+                }
+                .into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_transfer_emits_event() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&user1, &user1, &1000);
+
+    client.transfer(&user1, &user2, &250);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("transfer",).into_val(&env),
+                TransferEvent {
+                    from: user1,
+                    to: user2,
+                    amount: 250,
+                }
+                .into_val(&env),
+            ),
+        ]
+    );
+}
+
+#[test]
+fn test_blocked_transfer_emits_no_event() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user1);
+    // user2 is deliberately left off the whitelist.
+
+    // Reverted invocations discard their events entirely — the standardized
+    // `ReceiverNotWhitelisted` error code is the only observable signal for
+    // a compliance-restricted transfer (see docs/events.md).
+    let result = client.try_transfer(&user1, &user2, &100);
+    assert_eq!(result, Err(Ok(Error::ReceiverNotWhitelisted)));
+    assert_eq!(env.events().all().events().len(), 0);
+}
+
+#[test]
+fn test_distribute_yield_emits_event() {
+    let (env, client, admin, user1, _user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+
+    client.distribute_yield(&user1, &500);
+
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("yield_distributed",).into_val(&env),
+                YieldDistributedEvent {
+                    caller: user1,
+                    amount: 500,
+                }
+                .into_val(&env),
+            ),
+        ]
+    );
 }
