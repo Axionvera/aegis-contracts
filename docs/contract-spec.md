@@ -55,3 +55,20 @@ semantics and SDK usage guidance.
 
 * `get_investor_eligibility(env, investor)`: Returns an `InvestorEligibility` struct with the investor's whitelist status, the contract's pause state, current balance, active holding cap, remaining holding-cap capacity, and derived `can_send`/`can_receive` flags.
 * `check_transfer_eligibility(env, from, to, amount)`: Returns `true` if a transfer of `amount` from `from` to `to` would currently pass every check `transfer()` performs (pause, whitelist on both sides, holding cap, sender balance).
+
+## Capability Flags (capabilities.rs)
+
+Pure reads that advertise which modules are enabled and which protocol
+behaviours are supported, for SDK/dashboard feature gating. Never mutate
+state, require no authorization, and — unlike every call above — remain
+available **before `initialize`** as well as while paused. See
+[`docs/capabilities.md`](capabilities.md) for the full field reference, the
+key registry, and versioning rules.
+
+* `get_capabilities(env)`: Returns a `ContractCapabilities` struct describing compliance, minting, transfer, pause, metadata, and event support, plus `capability_version` / `contract_version`. Each behaviour is a `CapabilityStatus` — `Supported`, `Planned`, or `Unsupported` — alongside runtime switches (`paused`, `operations_enabled`, `supply_cap_enforced`, `holding_cap_enforced`, `metadata_configured`, `initialized`).
+* `supports_capability(env, capability)`: Returns the `CapabilityStatus` for a single capability key. Unknown keys return `Unsupported` instead of reverting, so newer clients fail safe against older deployments.
+* `get_capability_keys(env)`: Returns every capability key understood by this contract version.
+
+> A capability indicates the protocol *implements* a behaviour — not that the
+> caller is authorized to perform it, nor that it will succeed against current
+> state. Authorization remains governed by [`docs/admin-roles.md`](admin-roles.md).

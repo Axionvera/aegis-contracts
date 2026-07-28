@@ -1,6 +1,7 @@
 #![no_std]
 pub mod admin;
 pub mod asset;
+pub mod capabilities;
 pub mod compliance;
 pub mod eligibility;
 pub mod errors;
