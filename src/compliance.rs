@@ -1,3 +1,4 @@
+
 //! Compliance lifecycle state machine.
 //!
 //! Investor compliance is modelled as an explicit five-state lifecycle rather
@@ -8,6 +9,25 @@
 //! event. Minting and transfers consume the lifecycle state directly.
 //!
 //! See `docs/compliance-lifecycle.md` for the full specification.
+
+//! Compliance whitelist transitions.
+//!
+//! This module implements the two compliance status transitions of the
+//! protocol — approve (`whitelist_user`) and revoke (`revoke_whitelist`) —
+//! under the approved/revoked/blocked/pending/unknown status model defined
+//! in `docs/compliance-status-transitions.md`. The deterministic transition
+//! matrix, wrong-caller, blocked (paused), event, and state-consistency
+//! invariants for these functions are locked in by the test section
+//! "COMPLIANCE STATUS TRANSITION INVARIANTS" in `src/test.rs`.
+
+// The legacy `Events::publish((topic,), payload)` API is used intentionally:
+// docs/events.md freezes these (topic, payload) shapes as a stable off-chain
+// contract, and src/test.rs asserts them exactly. Migrating to the
+// `#[contractevent]` macro must preserve every emitted shape byte-for-byte.
+#![allow(deprecated)]
+
+use soroban_sdk::{contractimpl, contracttype, Address, Env};
+
 
 use soroban_sdk::{contractimpl, contracttype, vec, Address, Env, Vec};
 
@@ -269,6 +289,7 @@ pub fn require_can_send(env: &Env, user: &Address) -> Result<(), Error> {
 
 #[contractimpl]
 impl AegisContract {
+
     /// Returns the compliance lifecycle status for `user`
     /// (`Unknown` when no record exists). Pure read; always available.
     pub fn get_compliance_status(env: Env, user: Address) -> ComplianceStatus {
@@ -337,6 +358,13 @@ impl AegisContract {
     /// Approves `user` for compliance (legacy alias for a transition to
     /// [`ComplianceStatus::Approved`]).
     ///
+
+    /// Adds a user to the compliance whitelist.
+    ///
+    /// Status transition: any status (`Unknown`, `Pending`, `Approved`,
+    /// `Revoked`) → `Approved`. Re-approving an already-approved address is
+    /// an idempotent success that re-emits the event.
+
     /// Requires the ComplianceOfficer role, EmergencyOfficer role, or Admin.
     /// Blocked when the contract is paused. Reverts with
     /// `InvalidComplianceTransition` if `user` is `Blocked` — a sanctions
@@ -370,9 +398,18 @@ impl AegisContract {
         Ok(())
     }
 
+
     /// Revokes `user`'s compliance clearance (legacy alias for a transition to
     /// [`ComplianceStatus::Revoked`]).
     ///
+
+    /// Removes a user from the compliance whitelist.
+    ///
+    /// Status transition: any status → `Revoked` (off the whitelist).
+    /// Revoking a non-approved address (`Unknown`, `Pending`, already
+    /// `Revoked`) is an idempotent no-op that still emits the event for
+    /// audit-indexer simplicity.
+
     /// Requires the ComplianceOfficer role, EmergencyOfficer role, or Admin.
     /// Blocked when the contract is paused.
     ///

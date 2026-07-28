@@ -68,13 +68,27 @@ pub enum Error {
     InvalidAmount = 5000,
     /// The sender's balance is insufficient to cover the requested amount.
     InsufficientBalance = 5001,
+    /// Minting would exceed the active global supply cap.
+    SupplyCapExceeded = 5002,
+    /// The investor's balance would exceed the active holding cap.
+    HoldingCapExceeded = 5003,
     // ─── 6000s: Asset Metadata ──────────────────────────────────────────────
-    // Reserved for future asset-metadata validation errors (name, symbol,
-    // decimals, schema checks). No active failure paths use this range yet.
-    /// Minting/transfers are restricted because the asset is not Active.
-    AssetNotActive = 6000,
-    /// Asset status transition is not allowed by lifecycle rules.
-    InvalidAssetStatusTransition = 6001,
-    /// Metadata update is blocked in the current lifecycle status.
+    /// Metadata update is blocked in the current lifecycle status
+    /// (asset is Retired or Blocked).
     AssetMetadataUpdateBlocked = 6002,
+
+    // ─── 7000s: Asset Lifecycle ─────────────────────────────────────────────
+    /// The asset is in Draft status; minting and transfers are not permitted
+    /// until the asset is activated.
+    AssetNotActive = 7000,
+    /// The asset is in Paused (lifecycle) status; minting and transfers are
+    /// suspended until the asset is reactivated.
+    AssetLifecyclePaused = 7001,
+    /// The asset is Retired; all minting and transfers are permanently blocked.
+    AssetRetired = 7002,
+    /// The asset is Blocked; minting and transfers are suspended pending
+    /// regulatory or admin review.
+    AssetBlocked = 7003,
+    /// The requested lifecycle transition is not valid from the current status.
+    InvalidLifecycleTransition = 7004,
 }

@@ -1,7 +1,13 @@
-use soroban_sdk::{contractimpl, contracttype, Address, Env};
+
+// The legacy `Events::publish((topic,), payload)` API is used intentionally:
+// docs/events.md freezes these (topic, payload) shapes as a stable off-chain
+// contract, and src/test.rs asserts them exactly. Migrating to the
+// `#[contractevent]` macro must preserve every emitted shape byte-for-byte.
+use soroban_sdk::{contractimpl, contracttype, panic_with_error, Address, Env};
+
 
 use crate::admin::{get_admin, require_not_paused};
-use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey};
+use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error};
 
 // ─── Events ───────────────────────────────────────────────────────────────────
 
@@ -59,10 +65,20 @@ pub fn enforce_supply_cap(env: &Env, mint_amount: i128) {
         .instance()
         .get(&DataKey::TotalSupply)
         .unwrap_or(0);
-    assert!(
-        supply + mint_amount <= cap,
-        "Mint would exceed the active supply cap"
-    );
+    // Overflow-safe check: if supply already exceeds cap, any positive mint fails.
+    if supply > cap {
+        panic_with_error!(env, Error::SupplyCapExceeded);
+    }
+    let new_supply = match supply.checked_add(mint_amount) {
+        Some(val) => val,
+        None => {
+            // Addition overflow implies it exceeds any valid cap.
+            panic_with_error!(env, Error::SupplyCapExceeded);
+        }
+    };
+    if new_supply > cap {
+        panic_with_error!(env, Error::SupplyCapExceeded);
+    }
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────

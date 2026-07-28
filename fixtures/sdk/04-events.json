@@ -1,0 +1,407 @@
+{
+  "$schema_version": 1,
+  "fixture": "04-events",
+  "purpose": "One canonical example of every event topic the contract emits.",
+  "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+  "generator": "tests/sdk_fixtures.rs (cargo test --test sdk_fixtures)",
+  "notes": [
+    "Generated from live contract invocations in the Soroban test host; values are rendered from wire-level ScVal/XDR, never hand-written.",
+    "All addresses are synthetic, derived from SHA-256(\"aegis-fixture/<label>\"). They have no private keys and contain no real user data.",
+    "128-bit and 64-bit integers are encoded as decimal strings to stay lossless in JSON consumers that use IEEE-754 numbers."
+  ],
+  "scenarios": [
+    {
+      "id": "event-user-whitelisted",
+      "description": "Topic `user_whitelisted`, emitted by `whitelist_user`.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "user_whitelisted",
+          "topics": [
+            "user_whitelisted"
+          ],
+          "data": {
+            "caller": "GAEGCFR5CC2J5E5FVFDOJJS4TGNCBWTDMNILRHETSHDWXOXIOFWA25JU",
+            "user": "GCETMP6KNA4OB27H554CJJURJ7W2FCWJZUG3PCMC2DM73FVIARPHCMH2"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAQdXNlcl93aGl0ZWxpc3RlZAAAABEAAAABAAAAAgAAAA8AAAAGY2FsbGVyAAAAAAASAAAAAAAAAAAIYRY9ELSek6WpRuSmXJmaINpjY1C4nJORx2u66HFsDQAAAA8AAAAEdXNlcgAAABIAAAAAAAAAAIk2P8poOODr5+94JKaRT+2iisnNDbeJgtDZ/ZaoBF5x"
+        }
+      ]
+    },
+    {
+      "id": "event-whitelist-revoked",
+      "description": "Topic `whitelist_revoked`, emitted by `revoke_whitelist`.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "whitelist_revoked",
+          "topics": [
+            "whitelist_revoked"
+          ],
+          "data": {
+            "caller": "GAEGCFR5CC2J5E5FVFDOJJS4TGNCBWTDMNILRHETSHDWXOXIOFWA25JU",
+            "user": "GCETMP6KNA4OB27H554CJJURJ7W2FCWJZUG3PCMC2DM73FVIARPHCMH2"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAARd2hpdGVsaXN0X3Jldm9rZWQAAAAAAAARAAAAAQAAAAIAAAAPAAAABmNhbGxlcgAAAAAAEgAAAAAAAAAACGEWPRC0npOlqUbkplyZmiDaY2NQuJyTkcdruuhxbA0AAAAPAAAABHVzZXIAAAASAAAAAAAAAACJNj/KaDjg6+fveCSmkU/toorJzQ23iYLQ2f2WqARecQ=="
+        }
+      ]
+    },
+    {
+      "id": "event-asset-minted",
+      "description": "Topic `asset_minted`. `total_supply` is cumulative across all holders.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "asset_minted",
+          "topics": [
+            "asset_minted"
+          ],
+          "data": {
+            "amount": "1000",
+            "caller": "GBL2V6RSU2K6U3C73HDQOCVWBCQ7H7ZJY6RECEHIUHSZ7M6736CDPBMO",
+            "to": "GAXRVA67D5NLMKP6H5IROF3IY5EMQW6AQBJLTUITGAAZUXMGY7CYO2KG",
+            "total_supply": "1000"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAMYXNzZXRfbWludGVkAAAAEQAAAAEAAAAEAAAADwAAAAZhbW91bnQAAAAAAAoAAAAAAAAAAAAAAAAAAAPoAAAADwAAAAZjYWxsZXIAAAAAABIAAAAAAAAAAFeq+jKmlepsX9nHBwq2CKHz/ynHokEQ6KHln7Pf34Q3AAAADwAAAAJ0bwAAAAAAEgAAAAAAAAAALxqD3x9atin+P1EXF2jHSMhbwIBSudETMAGaXYbHxYcAAAAPAAAADHRvdGFsX3N1cHBseQAAAAoAAAAAAAAAAAAAAAAAAAPo"
+        }
+      ]
+    },
+    {
+      "id": "event-transfer",
+      "description": "Topic `transfer`, emitted on every successful transfer.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "transfer",
+          "topics": [
+            "transfer"
+          ],
+          "data": {
+            "amount": "250",
+            "from": "GAXRVA67D5NLMKP6H5IROF3IY5EMQW6AQBJLTUITGAAZUXMGY7CYO2KG",
+            "to": "GD4YM2BO77TT5BMWZC7SMH74GWZ5TPTKVTGPW5X6VUKFXLLD6W3XPRYN"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAIdHJhbnNmZXIAAAARAAAAAQAAAAMAAAAPAAAABmFtb3VudAAAAAAACgAAAAAAAAAAAAAAAAAAAPoAAAAPAAAABGZyb20AAAASAAAAAAAAAAAvGoPfH1q2Kf4/URcXaMdIyFvAgFK50RMwAZpdhsfFhwAAAA8AAAACdG8AAAAAABIAAAAAAAAAAPmGaC7/5z6Flsi/Jh/8NbPZvmqszPt2/q0UW61j9bd3"
+        }
+      ]
+    },
+    {
+      "id": "event-yield-distributed",
+      "description": "Topic `yield_distributed`. The current implementation is a mock that emits the event without moving balances (see asset.rs).",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "yield_distributed",
+          "topics": [
+            "yield_distributed"
+          ],
+          "data": {
+            "amount": "500",
+            "caller": "GBL2V6RSU2K6U3C73HDQOCVWBCQ7H7ZJY6RECEHIUHSZ7M6736CDPBMO"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAReWllbGRfZGlzdHJpYnV0ZWQAAAAAAAARAAAAAQAAAAIAAAAPAAAABmFtb3VudAAAAAAACgAAAAAAAAAAAAAAAAAAAfQAAAAPAAAABmNhbGxlcgAAAAAAEgAAAAAAAAAAV6r6MqaV6mxf2ccHCrYIofP/KceiQRDooeWfs9/fhDc="
+        }
+      ]
+    },
+    {
+      "id": "event-contract-initialized",
+      "description": "Topic `contract_initialized`, emitted once on single-initialization.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "contract_initialized",
+          "topics": [
+            "contract_initialized"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAUY29udHJhY3RfaW5pdGlhbGl6ZWQAAAARAAAAAQAAAAEAAAAPAAAABWFkbWluAAAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/w="
+        }
+      ]
+    },
+    {
+      "id": "event-role-assigned",
+      "description": "Topic `role_assigned`. The `role` field is a unit enum, encoded as a single-element vector holding the variant name.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "role_assigned",
+          "topics": [
+            "role_assigned"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
+            "role": [
+              "ComplianceOfficer"
+            ],
+            "target": "GAEGCFR5CC2J5E5FVFDOJJS4TGNCBWTDMNILRHETSHDWXOXIOFWA25JU"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAANcm9sZV9hc3NpZ25lZAAAAAAAABEAAAABAAAAAwAAAA8AAAAFYWRtaW4AAAAAAAASAAAAAAAAAADBWnn6glXEWhajcUuEBTTeXfmGC3pw5NgVRKdobm2f/AAAAA8AAAAEcm9sZQAAABAAAAABAAAAAQAAAA8AAAARQ29tcGxpYW5jZU9mZmljZXIAAAAAAAAPAAAABnRhcmdldAAAAAAAEgAAAAAAAAAACGEWPRC0npOlqUbkplyZmiDaY2NQuJyTkcdruuhxbA0="
+        }
+      ]
+    },
+    {
+      "id": "event-role-revoked",
+      "description": "Topic `role_revoked`. `role` carries the *previous* role, not None.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "role_revoked",
+          "topics": [
+            "role_revoked"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
+            "role": [
+              "ComplianceOfficer"
+            ],
+            "target": "GAEGCFR5CC2J5E5FVFDOJJS4TGNCBWTDMNILRHETSHDWXOXIOFWA25JU"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAMcm9sZV9yZXZva2VkAAAAEQAAAAEAAAADAAAADwAAAAVhZG1pbgAAAAAAABIAAAAAAAAAAMFaefqCVcRaFqNxS4QFNN5d+YYLenDk2BVEp2hubZ/8AAAADwAAAARyb2xlAAAAEAAAAAEAAAABAAAADwAAABFDb21wbGlhbmNlT2ZmaWNlcgAAAAAAAA8AAAAGdGFyZ2V0AAAAAAASAAAAAAAAAAAIYRY9ELSek6WpRuSmXJmaINpjY1C4nJORx2u66HFsDQ=="
+        }
+      ]
+    },
+    {
+      "id": "event-admin-transfer-initiated",
+      "description": "Topic `admin_transfer_initiated`, step 1 of the 2-step admin handoff.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "admin_transfer_initiated",
+          "topics": [
+            "admin_transfer_initiated"
+          ],
+          "data": {
+            "candidate": "GCETMP6KNA4OB27H554CJJURJ7W2FCWJZUG3PCMC2DM73FVIARPHCMH2",
+            "current_admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAYYWRtaW5fdHJhbnNmZXJfaW5pdGlhdGVkAAAAEQAAAAEAAAACAAAADwAAAAljYW5kaWRhdGUAAAAAAAASAAAAAAAAAACJNj/KaDjg6+fveCSmkU/toorJzQ23iYLQ2f2WqARecQAAAA8AAAANY3VycmVudF9hZG1pbgAAAAAAABIAAAAAAAAAAMFaefqCVcRaFqNxS4QFNN5d+YYLenDk2BVEp2hubZ/8"
+        }
+      ]
+    },
+    {
+      "id": "event-admin-transferred",
+      "description": "Topic `admin_transferred`, step 2. The candidate must call `accept_admin`.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "admin_transferred",
+          "topics": [
+            "admin_transferred"
+          ],
+          "data": {
+            "new_admin": "GCETMP6KNA4OB27H554CJJURJ7W2FCWJZUG3PCMC2DM73FVIARPHCMH2",
+            "previous_admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAARYWRtaW5fdHJhbnNmZXJyZWQAAAAAAAARAAAAAQAAAAIAAAAPAAAACW5ld19hZG1pbgAAAAAAABIAAAAAAAAAAIk2P8poOODr5+94JKaRT+2iisnNDbeJgtDZ/ZaoBF5xAAAADwAAAA5wcmV2aW91c19hZG1pbgAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/w="
+        }
+      ]
+    },
+    {
+      "id": "event-admin-renounced",
+      "description": "Topic `admin_renounced`, emitted by the irreversible `renounce_admin`. It reuses the AdminTransferredEvent payload with `new_admin` equal to `previous_admin`, so the topic — not the payload — is what distinguishes a renounce from a transfer. After this the contract has no admin.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "admin_renounced",
+          "topics": [
+            "admin_renounced"
+          ],
+          "data": {
+            "new_admin": "GCETMP6KNA4OB27H554CJJURJ7W2FCWJZUG3PCMC2DM73FVIARPHCMH2",
+            "previous_admin": "GCETMP6KNA4OB27H554CJJURJ7W2FCWJZUG3PCMC2DM73FVIARPHCMH2"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAPYWRtaW5fcmVub3VuY2VkAAAAABEAAAABAAAAAgAAAA8AAAAJbmV3X2FkbWluAAAAAAAAEgAAAAAAAAAAiTY/ymg44Ovn73gkppFP7aKKyc0Nt4mC0Nn9lqgEXnEAAAAPAAAADnByZXZpb3VzX2FkbWluAAAAAAASAAAAAAAAAACJNj/KaDjg6+fveCSmkU/toorJzQ23iYLQ2f2WqARecQ=="
+        }
+      ]
+    },
+    {
+      "id": "event-contract-paused",
+      "description": "Topic `contract_paused`. An EmergencyOfficer may pause; only the admin may unpause.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "contract_paused",
+          "topics": [
+            "contract_paused"
+          ],
+          "data": {
+            "admin": "GBLPHF3QVD22643G67KSIPOHI2OY5UDQJAW4XKNOZABV2HDXITYQ34FV"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAPY29udHJhY3RfcGF1c2VkAAAAABEAAAABAAAAAQAAAA8AAAAFYWRtaW4AAAAAAAASAAAAAAAAAABW85dwqPWvc2b31SQ9x0adjtBwSC3Lqa7IA10cd0TxDQ=="
+        }
+      ]
+    },
+    {
+      "id": "event-contract-unpaused",
+      "description": "Topic `contract_unpaused`, emitted by the admin-only `unpause`.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "contract_unpaused",
+          "topics": [
+            "contract_unpaused"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAARY29udHJhY3RfdW5wYXVzZWQAAAAAAAARAAAAAQAAAAEAAAAPAAAABWFkbWluAAAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/w="
+        }
+      ]
+    },
+    {
+      "id": "event-supply-cap-proposed",
+      "description": "Topic `supply_cap_proposed`, step 1 of supply cap governance.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "supply_cap_proposed",
+          "topics": [
+            "supply_cap_proposed"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
+            "current_cap": "0",
+            "proposed_cap": "10000"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAATc3VwcGx5X2NhcF9wcm9wb3NlZAAAAAARAAAAAQAAAAMAAAAPAAAABWFkbWluAAAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/wAAAAPAAAAC2N1cnJlbnRfY2FwAAAAAAoAAAAAAAAAAAAAAAAAAAAAAAAADwAAAAxwcm9wb3NlZF9jYXAAAAAKAAAAAAAAAAAAAAAAAAAnEA=="
+        }
+      ]
+    },
+    {
+      "id": "event-supply-cap-amended",
+      "description": "Topic `supply_cap_amended`, step 2 — the cap is now enforced.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "supply_cap_amended",
+          "topics": [
+            "supply_cap_amended"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
+            "new_cap": "10000",
+            "previous_cap": "0"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAASc3VwcGx5X2NhcF9hbWVuZGVkAAAAAAARAAAAAQAAAAMAAAAPAAAABWFkbWluAAAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/wAAAAPAAAAB25ld19jYXAAAAAACgAAAAAAAAAAAAAAAAAAJxAAAAAPAAAADHByZXZpb3VzX2NhcAAAAAoAAAAAAAAAAAAAAAAAAAAA"
+        }
+      ]
+    },
+    {
+      "id": "event-holding-cap-proposed",
+      "description": "Topic `holding_cap_proposed`, step 1 of holding cap governance.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "holding_cap_proposed",
+          "topics": [
+            "holding_cap_proposed"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
+            "current_cap": "0",
+            "proposed_cap": "2000"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAUaG9sZGluZ19jYXBfcHJvcG9zZWQAAAARAAAAAQAAAAMAAAAPAAAABWFkbWluAAAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/wAAAAPAAAAC2N1cnJlbnRfY2FwAAAAAAoAAAAAAAAAAAAAAAAAAAAAAAAADwAAAAxwcm9wb3NlZF9jYXAAAAAKAAAAAAAAAAAAAAAAAAAH0A=="
+        }
+      ]
+    },
+    {
+      "id": "event-holding-cap-amended",
+      "description": "Topic `holding_cap_amended`, step 2 — the per-investor cap is now enforced.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "holding_cap_amended",
+          "topics": [
+            "holding_cap_amended"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
+            "new_cap": "2000",
+            "previous_cap": "0"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAATaG9sZGluZ19jYXBfYW1lbmRlZAAAAAARAAAAAQAAAAMAAAAPAAAABWFkbWluAAAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/wAAAAPAAAAB25ld19jYXAAAAAACgAAAAAAAAAAAAAAAAAAB9AAAAAPAAAADHByZXZpb3VzX2NhcAAAAAoAAAAAAAAAAAAAAAAAAAAA"
+        }
+      ]
+    },
+    {
+      "id": "event-asset-status-changed",
+      "description": "Topic `asset_status_changed`. Both statuses are unit enums encoded as single-element vectors.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "asset_status_changed",
+          "topics": [
+            "asset_status_changed"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
+            "new_status": [
+              "Paused"
+            ],
+            "previous_status": [
+              "Active"
+            ]
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAUYXNzZXRfc3RhdHVzX2NoYW5nZWQAAAARAAAAAQAAAAMAAAAPAAAABWFkbWluAAAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/wAAAAPAAAACm5ld19zdGF0dXMAAAAAABAAAAABAAAAAQAAAA8AAAAGUGF1c2VkAAAAAAAPAAAAD3ByZXZpb3VzX3N0YXR1cwAAAAAQAAAAAQAAAAEAAAAPAAAABkFjdGl2ZQAA"
+        }
+      ]
+    },
+    {
+      "id": "event-asset-metadata-updated",
+      "description": "Topic `asset_metadata_updated`. The URI is a documentation-only `example.invalid` host and resolves nowhere.",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "asset_metadata_updated",
+          "topics": [
+            "asset_metadata_updated"
+          ],
+          "data": {
+            "caller": "GBL2V6RSU2K6U3C73HDQOCVWBCQ7H7ZJY6RECEHIUHSZ7M6736CDPBMO",
+            "name": "Aegis Sample Tower",
+            "symbol": "AST",
+            "uri": "https://example.invalid/aegis/sample-tower.json"
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAWYXNzZXRfbWV0YWRhdGFfdXBkYXRlZAAAAAAAEQAAAAEAAAAEAAAADwAAAAZjYWxsZXIAAAAAABIAAAAAAAAAAFeq+jKmlepsX9nHBwq2CKHz/ynHokEQ6KHln7Pf34Q3AAAADwAAAARuYW1lAAAADgAAABJBZWdpcyBTYW1wbGUgVG93ZXIAAAAAAA8AAAAGc3ltYm9sAAAAAAAOAAAAA0FTVAAAAAAPAAAAA3VyaQAAAAAOAAAAL2h0dHBzOi8vZXhhbXBsZS5pbnZhbGlkL2FlZ2lzL3NhbXBsZS10b3dlci5qc29uAA=="
+        }
+      ]
+    },
+    {
+      "id": "event-none-on-reverted-transfer",
+      "description": "Soroban discards all events from a reverted invocation, so a compliance-blocked transfer emits nothing at all. The numeric error code is the only off-chain-observable signal — indexers must watch failed transaction results, not events, to audit blocked transfers (see docs/events.md).",
+      "call": "transfer",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 4001,
+          "name": "ReceiverNotWhitelisted",
+          "category": "compliance"
+        }
+      },
+      "events": []
+    }
+  ]
+}

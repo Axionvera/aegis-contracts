@@ -1,7 +1,7 @@
 use soroban_sdk::{contractimpl, contracttype, vec, Env, String, Symbol, Vec};
 
 use crate::admin::is_paused;
-use crate::asset::{get_asset_status_internal, AssetStatus};
+use crate::lifecycle::{get_asset_status, AssetStatus};
 use crate::holding::get_holding_cap;
 use crate::supply_cap::get_supply_cap;
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey};
@@ -286,7 +286,7 @@ pub fn get_capabilities(env: &Env) -> ContractCapabilities {
     // ── Runtime switches, read once so the whole response is consistent ──
     let initialized = env.storage().instance().has(&DataKey::Admin);
     let paused = is_paused(env);
-    let asset_active = get_asset_status_internal(env) == AssetStatus::Active;
+    let asset_active = get_asset_status(env) == AssetStatus::Active;
     let supply_cap_enforced = get_supply_cap(env) > 0;
     let holding_cap_enforced = get_holding_cap(env) > 0;
     let metadata_configured = is_metadata_configured(env);
