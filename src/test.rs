@@ -1077,6 +1077,100 @@ fn test_supply_cap_lowering_below_supply_blocks_future_mints() {
     assert!(r.is_err());
 }
 
+#[test]
+fn test_supply_cap_zero_mint_rejected_without_state_change() {
+    let (env, client, admin, _user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user2);
+    client.propose_supply_cap(&admin, &1000);
+    client.accept_supply_cap(&admin);
+
+    assert_eq!(client.get_total_supply(), 0);
+    assert_eq!(client.get_balance_of(&user2), 0);
+
+    let r = client.try_mint_asset(&admin, &user2, &0);
+    assert_eq!(r, Err(Ok(Error::InvalidAmount)));
+
+    // Failed mint must not mutate supply or recipient balance.
+    assert_eq!(client.get_total_supply(), 0);
+    assert_eq!(client.get_balance_of(&user2), 0);
+}
+
+#[test]
+fn test_supply_cap_boundary_and_exceeded_preserve_state() {
+    let (env, client, admin, _user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user2);
+    client.propose_supply_cap(&admin, &1000);
+    client.accept_supply_cap(&admin);
+
+    // Exactly at cap must succeed.
+    let r = client.try_mint_asset(&admin, &user2, &1000);
+    assert!(r.is_ok());
+    assert_eq!(client.get_total_supply(), 1000);
+    assert_eq!(client.get_balance_of(&user2), 1000);
+
+    // Any additional mint must fail and keep state unchanged.
+    let r = client.try_mint_asset(&admin, &user2, &1);
+    assert!(r.is_err());
+    assert_eq!(client.get_total_supply(), 1000);
+    assert_eq!(client.get_balance_of(&user2), 1000);
+}
+
+#[test]
+fn test_supply_cap_repeated_minting_near_cap_then_rejects() {
+    let (env, client, admin, _user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user2);
+    client.propose_supply_cap(&admin, &1000);
+    client.accept_supply_cap(&admin);
+
+    // Repeated mints approaching the cap.
+    let matrix = [300_i128, 300_i128, 399_i128, 1_i128];
+    for amount in matrix {
+        let r = client.try_mint_asset(&admin, &user2, &amount);
+        assert!(r.is_ok());
+    }
+    assert_eq!(client.get_total_supply(), 1000);
+    assert_eq!(client.get_balance_of(&user2), 1000);
+
+    // Any extra amount must fail with no state drift.
+    let r = client.try_mint_asset(&admin, &user2, &1);
+    assert!(r.is_err());
+    assert_eq!(client.get_total_supply(), 1000);
+    assert_eq!(client.get_balance_of(&user2), 1000);
+}
+
+#[test]
+fn test_supply_cap_overflow_like_mint_keeps_state_consistent() {
+    let (env, client, admin, _user1, user2) = setup();
+    env.mock_all_auths();
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user2);
+    client.propose_supply_cap(&admin, &i128::MAX);
+    client.accept_supply_cap(&admin);
+
+    // Reach the practical numeric boundary first.
+    let r = client.try_mint_asset(&admin, &user2, &i128::MAX);
+    assert!(r.is_ok());
+    assert_eq!(client.get_total_supply(), i128::MAX);
+    assert_eq!(client.get_balance_of(&user2), i128::MAX);
+
+    // Next mint would require i128::MAX + 1 internally (overflow-like path).
+    // The call must fail and preserve the pre-call state.
+    let r = client.try_mint_asset(&admin, &user2, &1);
+    assert!(r.is_err());
+    assert_eq!(client.get_total_supply(), i128::MAX);
+    assert_eq!(client.get_balance_of(&user2), i128::MAX);
+}
+
 // ─── Investor holding restriction checks (#33) ───────────────────────────────
 
 #[test]
