@@ -44,6 +44,7 @@ value-encoding rules, and the no-real-user-data guarantee.
 
 > **Important**: Please read our [Legal Boundary Disclaimer](docs/legal-boundary-disclaimer.md) to understand the off-chain assumptions and limitations of the RWA tokenization model.
 
+- [Contract Storage Layout and Migration Guide](docs/storage-audit-map.md) — complete key inventory, stored data models, cross-key invariants, upgrade assumptions, migration strategies, and the mandatory storage-change review checklist
 - [RWA Protocol Threat Model](docs/threat-model.md) — protected assets, trust boundaries, threat catalog (compliance bypass, admin/role misuse, minting and transfer risks, pause misuse, event reliability), and explicit off-chain/legal out-of-scope items
 - [Emergency Pause Policy](docs/emergency-pause.md) — global pause mechanism, authorization, and trust model
 - [Admin Roles & Permissions](docs/admin-roles.md) — role-based access control (RBAC) design
