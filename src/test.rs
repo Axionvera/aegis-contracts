@@ -1566,10 +1566,12 @@ fn test_contract_capabilities() {
     let (env, client, admin, _user1, _user2) = setup();
     env.mock_all_auths();
 
-    // 1. Before initialization
+    // 1. Before initialization (asset starts in Draft state)
     let caps_before = client.get_capabilities();
-    let mut expected_before = default_capabilities(&env);
-    assert_eq!(caps_before, expected_before);
+    let mut expected = default_capabilities(&env);
+    expected.pause.asset_active = false;
+    expected.pause.operations_enabled = false;
+    assert_eq!(caps_before, expected);
 
     // supports_capability works before initialization
     assert_eq!(
@@ -1577,11 +1579,18 @@ fn test_contract_capabilities() {
         CapabilityStatus::Supported
     );
 
-    // 2. After initialization
+    // 2. After initialization (still in Draft state)
     client.initialize(&admin);
-    let caps_after = client.get_capabilities();
-    expected_before.initialized = true;
-    assert_eq!(caps_after, expected_before);
+    let caps_after_init = client.get_capabilities();
+    expected.initialized = true;
+    assert_eq!(caps_after_init, expected);
+
+    // 3. After setting status to Active
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    let caps_after_active = client.get_capabilities();
+    expected.pause.asset_active = true;
+    expected.pause.operations_enabled = true;
+    assert_eq!(caps_after_active, expected);
 
     // 3. Read-only / no state changes
     // Calling capability endpoints must publish no events and not modify balances or storage
