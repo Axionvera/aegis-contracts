@@ -300,6 +300,198 @@ fn test_transfer_insufficient_balance_fails() {
     client.transfer(&user1, &user2, &500);
 }
 
+#[test]
+fn test_revoke_emits_event() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(AegisContract, ());
+    let client = AegisContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user);
+    client.revoke_user(&admin, &user);
+
+    let events = contract_events(&env, &contract_id);
+    assert_eq!(events.len(), 1, "revoke_user must publish exactly one event");
+
+    let (topics, data) = &events[0];
+    let expected: soroban_sdk::Vec<Val> =
+        (symbol_short!("aegis"), symbol_short!("wl_rev"), user).into_val(&env);
+    assert_eq!(topics, &sc_topics(&env, expected));
+    assert_eq!(data, &sc(&env, admin.into_val(&env)));
+}
+
+#[test]
+#[should_panic(expected = "Receiver is revoked")]
+fn test_revoked_cannot_receive_mint() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(AegisContract, ());
+    let client = AegisContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user);
+    client.mint_asset(&admin, &user, &1000);
+    client.revoke_user(&admin, &user);
+    // Should fail: revoked recipient cannot receive new restricted tokens
+    client.mint_asset(&admin, &user, &100);
+}
+
+#[test]
+#[should_panic(expected = "Receiver is revoked")]
+fn test_revoked_cannot_receive_transfer() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(AegisContract, ());
+    let client = AegisContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&admin, &user1, &1000);
+    client.revoke_user(&admin, &user2);
+    // user2 is revoked, cannot receive
+    client.transfer(&user1, &user2, &100);
+}
+
+#[test]
+#[should_panic(expected = "Sender is revoked")]
+fn test_revoked_cannot_send_transfer_fully_blocked() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(AegisContract, ());
+    let client = AegisContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let user1 = Address::generate(&env);
+    let user2 = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user1);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&admin, &user1, &1000);
+    client.revoke_user(&admin, &user1);
+    // Fully blocked policy: revoked sender cannot transfer out
+    client.transfer(&user1, &user2, &100);
+}
+
+#[test]
+fn test_revoked_retains_balance_but_frozen() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(AegisContract, ());
+    let client = AegisContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user);
+    client.mint_asset(&admin, &user, &1000);
+    client.revoke_user(&admin, &user);
+
+    // Balance should still exist (not burned) but frozen
+    let status: (bool, bool) = client.compliance_status(&user);
+    assert_eq!(status.0, false, "whitelist should be false after revocation");
+    assert_eq!(status.1, true, "revoked flag should be true");
+
+    // Check whitelist helper returns false
+    assert_eq!(client.is_whitelisted_check(&user), false);
+    assert_eq!(client.is_revoked_check(&user), true);
+}
+
+#[test]
+fn test_rewhitelist_clears_revocation() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(AegisContract, ());
+    let client = AegisContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+    let user2 = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.whitelist_user(&admin, &user);
+    client.whitelist_user(&admin, &user2);
+    client.mint_asset(&admin, &user, &1000);
+    client.revoke_user(&admin, &user);
+
+    // Re-whitelist after compliance review
+    client.whitelist_user(&admin, &user);
+
+    assert_eq!(client.is_revoked_check(&user), false);
+    assert_eq!(client.is_whitelisted_check(&user), true);
+
+    // Should now be able to receive and send again
+    client.mint_asset(&admin, &user, &500);
+    client.transfer(&user, &user2, &200);
+}
+
+#[test]
+fn test_revocation_lifecycle_observable() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(AegisContract, ());
+    let client = AegisContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let user1 = Address::generate(&env);
+
+    let mut collected: std::vec::Vec<EventPair> = std::vec::Vec::new();
+    let mut record = |env: &Env| collected.extend(contract_events(env, &contract_id));
+
+    client.initialize(&admin);
+    record(&env);
+    client.whitelist_user(&admin, &user1);
+    record(&env);
+    client.mint_asset(&admin, &user1, &1000);
+    record(&env);
+    client.revoke_user(&admin, &user1);
+    record(&env);
+
+    assert_eq!(collected.len(), 4, "expected init + whitelist + mint + revoke");
+
+    let namespace = sc(&env, symbol_short!("aegis").into_val(&env));
+    let expected_actions = [
+        symbol_short!("init"),
+        symbol_short!("wl_add"),
+        symbol_short!("mint"),
+        symbol_short!("wl_rev"),
+    ];
+
+    for (idx, (topics, _)) in collected.iter().enumerate() {
+        let topic0 = topics.first().expect("namespace");
+        assert_eq!(topic0, &namespace);
+        let topic1 = topics.get(1).expect("action");
+        assert_eq!(
+            topic1,
+            &sc(&env, expected_actions[idx].into_val(&env)),
+            "action mismatch {}",
+            idx
+        );
+    }
+}
+
+#[test]
+#[should_panic(expected = "Receiver is not whitelisted")]
+fn test_non_whitelisted_still_blocked_after_unrevoke_without_whitelist() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register(AegisContract, ());
+    let client = AegisContractClient::new(&env, &contract_id);
+    let admin = Address::generate(&env);
+    let user = Address::generate(&env);
+
+    client.initialize(&admin);
+    // Never whitelisted, but try unrevoke then mint - should still fail whitelist
+    client.unrevoke_user(&admin, &user);
+    client.mint_asset(&admin, &user, &100);
+}
+
 /// Dumps the real, host-produced XDR for every Aegis event as base64 so the
 /// off-chain monitoring decoder can be verified against genuine contract
 /// output. Ignored by default; run with:
@@ -350,4 +542,6 @@ fn dump_event_xdr() {
     dump(&env, "transfer");
     client.distribute_yield(&admin, &42);
     dump(&env, "yield");
+    client.revoke_user(&admin, &user1);
+    dump(&env, "wl_rev");
 }

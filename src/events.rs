@@ -48,6 +48,23 @@ pub struct WhitelistAdd {
     pub admin: Address,
 }
 
+/// `("aegis", "wl_rev", user)` -> `admin`
+///
+/// Compliance-critical: records revocation/suspension of a previously whitelisted
+/// investor. When this event is observed, off-chain systems must:
+/// - Mark user as non-compliant and frozen
+/// - Stop allowing future mints/transfers to this address
+/// - Alert risk desk for potential forced redemption / off-boarding
+/// Policy: revoked users cannot receive new restricted tokens (mint/transfer-in)
+/// and cannot send (transfer-out) - fully frozen, but retain historical balance.
+#[contractevent(topics = ["aegis", "wl_rev"], data_format = "single-value")]
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct WhitelistRevoked {
+    #[topic]
+    pub user: Address,
+    pub admin: Address,
+}
+
 /// `("aegis", "mint", to)` -> `[amount, new_balance, total_supply]`
 ///
 /// Publishing the resulting balance and supply alongside the delta lets the
@@ -103,6 +120,14 @@ pub fn contract_initialized(env: &Env, admin: &Address) {
 
 pub fn user_whitelisted(env: &Env, admin: &Address, user: &Address) {
     WhitelistAdd {
+        user: user.clone(),
+        admin: admin.clone(),
+    }
+    .publish(env);
+}
+
+pub fn user_revoked(env: &Env, admin: &Address, user: &Address) {
+    WhitelistRevoked {
         user: user.clone(),
         admin: admin.clone(),
     }

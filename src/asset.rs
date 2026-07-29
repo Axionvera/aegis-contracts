@@ -12,6 +12,10 @@ impl AegisContract {
         assert!(amount > 0, "Amount must be positive");
 
         assert!(
+            !compliance::is_revoked(&env, &to),
+            "Receiver is revoked"
+        );
+        assert!(
             compliance::is_whitelisted(&env, &to),
             "Receiver is not whitelisted"
         );
@@ -41,6 +45,16 @@ impl AegisContract {
     pub fn transfer(env: Env, from: Address, to: Address, amount: i128) {
         from.require_auth();
         assert!(amount > 0, "Amount must be positive");
+
+        // Revocation checks take precedence for clearer error messaging
+        assert!(
+            !compliance::is_revoked(&env, &from),
+            "Sender is revoked"
+        );
+        assert!(
+            !compliance::is_revoked(&env, &to),
+            "Receiver is revoked"
+        );
 
         assert!(
             compliance::is_whitelisted(&env, &from),

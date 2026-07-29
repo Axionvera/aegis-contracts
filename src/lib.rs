@@ -13,6 +13,7 @@ use soroban_sdk::{contract, contractimpl, contracttype, Address, Env};
 pub enum DataKey {
     Admin,
     Whitelist(Address),
+    Revoked(Address),
     Balance(Address),
     TotalSupply,
 }
