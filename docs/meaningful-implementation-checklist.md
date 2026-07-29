@@ -19,6 +19,10 @@ A small PR can be meaningful (a tight, well-tested fix). A large PR can be
 *un*meaningful (adds code without behaviour, tests, or security). Size is not
 the measure — **completeness is**.
 
+📖 For a deeper look at judging small-vs-incomplete changes and reviewer
+scope assessment, see the
+[Meaningful Change Threshold Guide](meaningful-change-threshold.md).
+
 ---
 
 ## Before you start

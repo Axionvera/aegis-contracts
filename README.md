@@ -106,6 +106,7 @@ See [Failing CI Response Guide](docs/failing-ci-guide.md) for detailed causes an
 - [Failing CI Response Guide](docs/failing-ci-guide.md) — how to reproduce and fix Rust, Soroban, Makefile, dependency, and workflow failures (failing checks can block approval)
 - [Payment-Period Conduct Note](docs/payment-period-conduct.md) — contributor expectations during paid periods: no spam, self-review, GrantFox evaluation, CI/testing
 - [Meaningful Implementation Checklist](docs/meaningful-implementation-checklist.md) — what counts as real contract work: behaviour, security, tests, events, acceptance criteria + reviewer checks
+- [Meaningful Change Threshold Guide](docs/meaningful-change-threshold.md) — why line count alone is not the standard, small-but-complete vs. small-but-incomplete examples, and reviewer scope-assessment guidance
 - [Aegis Contracts Contribution Examples](docs/aegis-contracts-examples.md) — side-by-side comparisons of low-effort, partial, under-tested, failing-CI, and acceptable contributions (reference before opening a PR)
 - [Minimum Testing Standards](docs/testing-standards.md) — **mandatory** testing requirements per module, happy-path and negative-path expectations, integration fixtures, manual verification guidance, and no-test justification policy
 
