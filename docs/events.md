@@ -58,7 +58,7 @@ name, never on struct declaration order or Rust type layout.**
 > rejected transitions emit nothing — are defined in
 > [`compliance-status-transitions.md`](compliance-status-transitions.md).
 
-| `asset_status_changed`        | `AssetStatusChangedEvent`    | `asset.rs`      | `set_asset_status`                              | `caller: Address`, `previous_status: AssetStatus`, `new_status: AssetStatus` |
+| `asset_status_changed`        | `AssetStatusChangedEvent`    | `lifecycle.rs`  | `set_asset_status`                              | `admin: Address`, `previous_status: AssetStatus`, `new_status: AssetStatus` |
 | `asset_metadata_updated`      | `AssetMetadataUpdatedEvent`  | `asset.rs`      | `update_asset_metadata`                         | `caller: Address`, `name: String`, `symbol: String`, `uri: String` |
 
 
@@ -150,9 +150,12 @@ impossible, stop waiting for it". The compensating capability,
 
 ## Compatibility tests
 
-Every event above has a corresponding test in [`src/test.rs`](../src/test.rs)
-asserting its exact topic and payload shape using
-`soroban_sdk::testutils::Events`:
+Every event above has a corresponding unit test in [`src/test.rs`](../src/test.rs)
+and a cross-repo compatibility test in
+[`tests/event_compatibility.rs`](../tests/event_compatibility.rs) asserting its
+exact topic and typed payload shape using `soroban_sdk::testutils::Events`.
+The SDK fixture generator in [`tests/sdk_fixtures.rs`](../tests/sdk_fixtures.rs)
+then serializes canonical examples to [`fixtures/sdk/04-events.json`](../fixtures/sdk/04-events.json):
 
 
 - `test_set_compliance_status_emits_lifecycle_event`
@@ -183,8 +186,8 @@ asserting its exact topic and payload shape using
 - `test_transfer_emits_event`
 - `test_blocked_transfer_emits_no_event`
 - `test_distribute_yield_emits_event`
-- `test_supply_cap_proposed_emits_event` (should verify `supply_cap_proposed` and `supply_cap_amended` payloads)
-- `test_holding_cap_proposed_emits_event` (should verify `holding_cap_proposed` and `holding_cap_amended` payloads)
+- `test_supply_cap_proposed_and_amended_emit_events`
+- `test_holding_cap_proposed_and_amended_emit_events`
 
 Add a new compatibility test alongside any new or changed event so a schema
 drift fails CI instead of shipping silently to downstream consumers.
@@ -232,9 +235,11 @@ guidelines to maintain forward and backward compatibility:
    returning `None`).
 
 7. **Asset lifecycle events** (`asset_status_changed`,
-   `asset_metadata_updated`) carry the full before/after state so consumers
-   need not maintain their own copy of the asset status to render a
-   transition.
+   `asset_metadata_updated`) carry the full before/after state where relevant:
+   `asset_status_changed` includes `previous_status` and `new_status`, while
+   `asset_metadata_updated` includes the complete latest `name`, `symbol`, and
+   `uri` snapshot. Consumers therefore do not need to infer a transition from
+   partial payloads.
 
 8. **No sensitive data is emitted.** All payloads contain only on-chain
    addresses, amounts, and role/status enum values already readable via the
