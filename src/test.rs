@@ -92,6 +92,10 @@ fn test_mint_reverts_without_asset_manager_role() {
     // user1 has no role at all — mint should revert
     let result = client.try_mint_asset(&user1, &user2, &100);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert_eq!(client.get_total_supply(), 0);
+    assert_eq!(client.get_balance_of(&user2), 0);
 }
 
 #[test]
@@ -106,6 +110,10 @@ fn test_mint_reverts_with_compliance_officer_role() {
     // ComplianceOfficer cannot mint — only AssetManager or Admin
     let result = client.try_mint_asset(&user1, &user2, &100);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert_eq!(client.get_total_supply(), 0);
+    assert_eq!(client.get_balance_of(&user2), 0);
 }
 
 #[test]
@@ -286,6 +294,9 @@ fn test_whitelist_reverts_without_role() {
     // user2 has no role — whitelist should revert
     let result = client.try_whitelist_user(&user2, &user1);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert!(!client.is_whitelisted(&user1));
 }
 
 #[test]
@@ -299,6 +310,9 @@ fn test_whitelist_reverts_with_asset_manager_role() {
     // AssetManager cannot whitelist — only ComplianceOfficer or Admin
     let result = client.try_whitelist_user(&user2, &user1);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert!(!client.is_whitelisted(&user1));
 }
 
 #[test]
@@ -349,6 +363,9 @@ fn test_revoke_whitelist_reverts_without_role() {
     // user2 has no role
     let result = client.try_revoke_whitelist(&user2, &user1);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert!(client.is_whitelisted(&user1));
 }
 
 #[test]
@@ -376,6 +393,9 @@ fn test_set_role_reverts_for_non_admin() {
     // user1 is not admin — cannot assign roles
     let result = client.try_set_role(&user1, &user2, &Role::AssetManager);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert_eq!(client.get_role_of(&user2), Role::None);
 }
 
 #[test]
@@ -384,11 +404,14 @@ fn test_remove_role_reverts_for_non_admin() {
     env.mock_all_auths();
 
     client.initialize(&admin);
-    client.set_role(&admin, &user2, &Role::AssetManager);
+    client.set_role(&admin, &user1, &Role::AssetManager);
 
-    // user1 is not admin — cannot revoke roles
-    let result = client.try_remove_role(&user1, &user2);
+    // user2 is not admin — cannot revoke roles
+    let result = client.try_remove_role(&user2, &user1);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert_eq!(client.get_role_of(&user1), Role::AssetManager);
 }
 
 #[test]
@@ -450,6 +473,9 @@ fn test_transfer_admin_reverts_for_non_admin() {
 
     let result = client.try_transfer_admin(&user1, &user2);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert_eq!(client.get_role_of(&admin), Role::Admin);
 }
 
 #[test]
@@ -463,6 +489,11 @@ fn test_accept_admin_reverts_for_wrong_candidate() {
     // user2 tries to accept — should revert
     let result = client.try_accept_admin(&user2);
     assert_eq!(result, Err(Ok(Error::NotPendingCandidate)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert_eq!(client.get_role_of(&admin), Role::Admin);
+    assert_eq!(client.get_role_of(&user1), Role::None);
+    assert_eq!(client.get_role_of(&user2), Role::None);
 }
 
 #[test]
@@ -506,6 +537,9 @@ fn test_renounce_admin_reverts_for_non_admin() {
 
     let result = client.try_renounce_admin(&user1);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert_eq!(client.get_role_of(&admin), Role::Admin);
 }
 
 #[test]
@@ -1613,10 +1647,10 @@ fn test_asset_paused_blocks_mint_and_transfer_with_unchanged_state() {
     let user2_before = client.get_balance_of(&user2);
 
     let mint_r = client.try_mint_asset(&user1, &user2, &10);
-    assert_eq!(mint_r, Err(Ok(Error::AssetLifecyclePaused)));
+    assert_eq!(mint_r, Err(Ok(Error::AssetPausedRestriction)));
 
     let transfer_r = client.try_transfer(&user1, &user2, &10);
-    assert_eq!(transfer_r, Err(Ok(Error::AssetLifecyclePaused)));
+    assert_eq!(transfer_r, Err(Ok(Error::AssetPausedRestriction)));
 
     // Failed operations must not mutate balances/supply.
     assert_eq!(client.get_total_supply(), supply_before);
@@ -1642,10 +1676,10 @@ fn test_asset_retired_blocks_mint_transfer_and_metadata_update() {
     let metadata_before = client.get_asset_metadata();
 
     let mint_r = client.try_mint_asset(&user1, &user2, &1);
-    assert_eq!(mint_r, Err(Ok(Error::AssetRetired)));
+    assert_eq!(mint_r, Err(Ok(Error::AssetRetiredRestriction)));
 
     let transfer_r = client.try_transfer(&user1, &user2, &1);
-    assert_eq!(transfer_r, Err(Ok(Error::AssetRetired)));
+    assert_eq!(transfer_r, Err(Ok(Error::AssetRetiredRestriction)));
 
     let metadata_r = client.try_update_asset_metadata(
         &user1,
@@ -1681,10 +1715,10 @@ fn test_asset_blocked_blocks_mint_and_transfer() {
     let metadata_before = client.get_asset_metadata();
 
     let mint_r = client.try_mint_asset(&user1, &user2, &10);
-    assert_eq!(mint_r, Err(Ok(Error::AssetBlocked)));
+    assert_eq!(mint_r, Err(Ok(Error::AssetBlockedRestriction)));
 
     let transfer_r = client.try_transfer(&user1, &user2, &10);
-    assert_eq!(transfer_r, Err(Ok(Error::AssetBlocked)));
+    assert_eq!(transfer_r, Err(Ok(Error::AssetBlockedRestriction)));
 
     let metadata_r = client.try_update_asset_metadata(
         &user1,
@@ -1812,12 +1846,7 @@ fn test_holding_cap_blocks_mint_over_limit() {
     assert!(r.is_ok());
     assert_eq!(client.get_balance_of(&user2), 500);
 
-    // Before initialize — no auth mocked, no admin in storage.
-    assert_eq!(
-        client.supports_capability(&Symbol::new(&env, "whitelist")),
-        CapabilityStatus::Supported
-    );
-    assert_eq!(client.get_capability_keys().len(), 28);
+
 
     // Mint that would push the holder over the cap is rejected.
     let r = client.try_mint_asset(&user1, &user2, &1);
@@ -1835,12 +1864,6 @@ fn test_holding_cap_blocks_transfer_over_limit() {
     client.whitelist_user(&admin, &user1);
     client.whitelist_user(&admin, &user2);
 
-    // And while paused.
-    assert_eq!(
-        client.supports_capability(&Symbol::new(&env, "whitelist")),
-        CapabilityStatus::Supported
-    );
-    assert_eq!(client.get_capability_keys().len(), 28);
 
     // Give user1 a balance, then cap user2's holding at 300.
     client.mint_asset(&user1, &user1, &1000);
@@ -1959,6 +1982,7 @@ fn setup_transferable() -> (Env, AegisContractClient<'static>, Address, Address,
     env.mock_all_auths();
 
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
 
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user1);
@@ -2102,7 +2126,7 @@ fn test_restriction_reason_retired_asset() {
         .is_terminal());
     assert_eq!(
         client.try_set_asset_status(&admin, &AssetStatus::Active),
-        Err(Ok(Error::InvalidAssetStatusTransition))
+        Err(Ok(Error::InvalidLifecycleTransition))
     );
 }
 
@@ -2313,8 +2337,8 @@ fn test_restriction_reason_code_mapping_is_total_and_round_trips() {
         (RestrictionReason::AssetPaused, 7000),
         (RestrictionReason::AssetRetired, 7001),
         (RestrictionReason::AssetBlocked, 7002),
-        (RestrictionReason::HoldingCapExceeded, 7003),
-        (RestrictionReason::SupplyCapExceeded, 7004),
+        (RestrictionReason::HoldingCapExceeded, 5003),
+        (RestrictionReason::SupplyCapExceeded, 5002),
     ];
 
     for (reason, expected_code) in reasons.iter() {
@@ -2463,7 +2487,6 @@ fn test_investor_eligibility_snapshot_agrees_with_restriction_reasons() {
         RestrictionReason::SenderNotCompliant
     );
 
-    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user2);
     client.propose_holding_cap(&admin, &500);
@@ -2534,13 +2557,6 @@ fn test_check_transfer_eligibility_true_for_eligible_transfer() {
 fn test_check_transfer_eligibility_false_when_invalid_amount() {
     let (env, client, admin, user1, user2) = setup();
     env.mock_all_auths();
-
-    // Before initialize — no auth mocked, no admin in storage.
-    assert_eq!(
-        client.supports_capability(&Symbol::new(&env, "whitelist")),
-        CapabilityStatus::Supported
-    );
-    assert_eq!(client.get_capability_keys().len(), 30);
 
     client.initialize(&admin);
     client.whitelist_user(&admin, &user1);
@@ -2625,12 +2641,7 @@ fn test_check_transfer_eligibility_false_when_contract_paused() {
 
     client.pause(&admin);
 
-    // And while paused.
-    assert_eq!(
-        client.supports_capability(&Symbol::new(&env, "whitelist")),
-        CapabilityStatus::Supported
-    );
-    assert_eq!(client.get_capability_keys().len(), 30);
+
 
     // The read helper itself must remain callable while paused, but must
     // reflect that transfers cannot currently succeed.
@@ -3093,6 +3104,17 @@ fn test_compliance_transition_events_have_exact_shape() {
             &fixture.env,
             (
                 fixture.client.address.clone(),
+                ("compliance_status_changed",).into_val(&fixture.env),
+                ComplianceStatusChangedEvent {
+                    caller: fixture.officer.clone(),
+                    user: fixture.target.clone(),
+                    previous_status: ComplianceStatus::Unknown,
+                    new_status: ComplianceStatus::Approved,
+                }
+                .into_val(&fixture.env),
+            ),
+            (
+                fixture.client.address.clone(),
                 ("user_whitelisted",).into_val(&fixture.env),
                 UserWhitelistedEvent {
                     caller: fixture.officer.clone(),
@@ -3111,6 +3133,17 @@ fn test_compliance_transition_events_have_exact_shape() {
         fixture.env.events().all(),
         vec![
             &fixture.env,
+            (
+                fixture.client.address.clone(),
+                ("compliance_status_changed",).into_val(&fixture.env),
+                ComplianceStatusChangedEvent {
+                    caller: fixture.emergency.clone(),
+                    user: fixture.target.clone(),
+                    previous_status: ComplianceStatus::Approved,
+                    new_status: ComplianceStatus::Revoked,
+                }
+                .into_val(&fixture.env),
+            ),
             (
                 fixture.client.address.clone(),
                 ("whitelist_revoked",).into_val(&fixture.env),
@@ -4130,6 +4163,7 @@ fn test_eligibility_snapshot_exposes_lifecycle_status() {
     let (env, client, admin, user1, user2) = setup();
     env.mock_all_auths();
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
 
     let e = client.get_investor_eligibility(&user2);

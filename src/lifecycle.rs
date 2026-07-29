@@ -29,23 +29,24 @@ use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Erro
 /// `Paused` flag managed by `admin::pause()`/`unpause()`. Both checks are
 /// evaluated independently in `mint_asset` and `transfer`.
 #[contracttype]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
 pub enum AssetStatus {
     /// Asset has been created but not yet made available for minting or
     /// transfers. This is the initial default state.
-    Draft,
+    Draft = 0,
     /// Asset is live. Minting and transfers are permitted (subject to all
     /// other compliance and cap checks).
-    Active,
+    Active = 1,
     /// Asset operations are suspended (lifecycle-level). Distinct from the
     /// contract-wide pause: both can be set simultaneously.
-    Paused,
+    Paused = 2,
     /// Asset has been permanently retired. No further minting or transfers
     /// are possible. This state is terminal.
-    Retired,
+    Retired = 3,
     /// Asset is blocked pending review (e.g. regulatory action). Minting and
     /// transfers are suspended until the admin explicitly unblocks the asset.
-    Blocked,
+    Blocked = 4,
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────────
@@ -151,16 +152,20 @@ impl AegisContract {
         }
 
         let current = get_asset_status(&env);
+        soroban_sdk::log!(&env, "set_asset_status CALLED. current: {}, new_status: {}", current, new_status);
 
         // Reject no-ops so event logs don't get polluted with spurious transitions.
         if current == new_status {
+            soroban_sdk::log!(&env, "FAILED: current == new_status");
             return Err(Error::InvalidLifecycleTransition);
         }
 
         if !is_valid_transition(&current, &new_status) {
+            soroban_sdk::log!(&env, "FAILED: !is_valid_transition");
             return Err(Error::InvalidLifecycleTransition);
         }
 
+        soroban_sdk::log!(&env, "TRANSITION SUCCESSFUL. Saving to storage.");
         env.storage()
             .instance()
             .set(&DataKey::AssetStatus, &new_status);

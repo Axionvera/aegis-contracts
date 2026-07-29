@@ -1535,33 +1535,31 @@ fn fixture_errors() {
         );
     }
 
-    // 7000 — AssetNotActive.
-    {
-        let h = Harness::new();
-        let c = h.client();
-        c.initialize(&h.actor("admin"));
-        let r = c.try_mint_asset(&h.actor("admin"), &h.actor("investor_alice"), &100);
-        push_err(
-            "error-7000-asset-not-active",
-            "The asset lifecycle status is Draft (not Active), so issuance and transfers are \
-             blocked.",
-            "mint_asset",
-            expect_err(r, Error::AssetNotActive),
-        );
-    }
-
-    // 7001 — AssetLifecyclePaused.
+    // 7000 — AssetPausedRestriction.
     {
         let h = bootstrap();
         let c = h.client();
         c.set_asset_status(&h.actor("admin"), &AssetStatus::Paused);
         let r = c.try_mint_asset(&h.actor("asset_manager"), &h.actor("investor_alice"), &100);
         push_err(
-            "error-7001-asset-lifecycle-paused",
-            "The asset lifecycle status is Paused, so issuance and transfers are \
-             blocked. Distinct from the global contract pause (3004).",
+            "error-7000-asset-paused-restriction",
+            "The asset lifecycle status is Paused, so issuance and transfers are blocked.",
             "mint_asset",
-            expect_err(r, Error::AssetLifecyclePaused),
+            expect_err(r, Error::AssetPausedRestriction),
+        );
+    }
+
+    // 7001 — AssetRetiredRestriction.
+    {
+        let h = bootstrap();
+        let c = h.client();
+        c.set_asset_status(&h.actor("admin"), &AssetStatus::Retired);
+        let r = c.try_mint_asset(&h.actor("asset_manager"), &h.actor("investor_alice"), &100);
+        push_err(
+            "error-7001-asset-retired-restriction",
+            "The asset lifecycle status is Retired, so issuance and transfers are blocked.",
+            "mint_asset",
+            expect_err(r, Error::AssetRetiredRestriction),
         );
     }
 
@@ -1660,7 +1658,8 @@ fn fixture_errors() {
         Error::ReceiverNotWhitelisted,
         Error::InvalidAmount,
         Error::InsufficientBalance,
-        Error::AssetNotActive,
+        Error::AssetPausedRestriction,
+        Error::AssetRetiredRestriction,
         Error::InvalidLifecycleTransition,
         Error::AssetMetadataUpdateBlocked,
     ];

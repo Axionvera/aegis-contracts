@@ -34,7 +34,8 @@ pub struct ContractInitializedEvent {
 /// Role-based access control levels.
 /// Admin is the supreme authority; other roles grant scoped privileges.
 #[contracttype]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
 pub enum Role {
     /// No role assigned.
     None,
@@ -49,7 +50,7 @@ pub enum Role {
     EmergencyOfficer,
 }
 
-#[contracttype]
+#[contracttype(export = false)]
 #[derive(Clone)]
 pub enum DataKey {
     /// The supreme admin address (set once at initialization).

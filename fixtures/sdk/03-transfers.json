@@ -87,12 +87,13 @@
         "investor_alice"
       ],
       "returns": {
-        "asset_status": [
-          "Active"
-        ],
+        "asset_status": 1,
         "balance": "1000",
         "can_receive": true,
         "can_send": true,
+        "compliance_status": [
+          "Approved"
+        ],
         "contract_paused": false,
         "holding_cap": "0",
         "remaining_capacity": null,
@@ -107,12 +108,13 @@
         "outsider_dave"
       ],
       "returns": {
-        "asset_status": [
-          "Active"
-        ],
+        "asset_status": 1,
         "balance": "0",
         "can_receive": false,
         "can_send": false,
+        "compliance_status": [
+          "Unknown"
+        ],
         "contract_paused": false,
         "holding_cap": "0",
         "remaining_capacity": null,
@@ -128,12 +130,13 @@
         "investor_alice"
       ],
       "returns": {
-        "asset_status": [
-          "Active"
-        ],
+        "asset_status": 1,
         "balance": "600",
         "can_receive": true,
         "can_send": true,
+        "compliance_status": [
+          "Approved"
+        ],
         "contract_paused": false,
         "holding_cap": "1000",
         "remaining_capacity": "400",
