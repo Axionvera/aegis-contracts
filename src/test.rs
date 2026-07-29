@@ -1561,6 +1561,58 @@ fn default_capabilities(env: &Env) -> ContractCapabilities {
     }
 }
 
+#[test]
+fn test_contract_capabilities() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    // 1. Before initialization (asset starts in Draft state)
+    let caps_before = client.get_capabilities();
+    let mut expected = default_capabilities(&env);
+    expected.pause.asset_active = false;
+    expected.pause.operations_enabled = false;
+    assert_eq!(caps_before, expected);
+
+    // supports_capability works before initialization
+    assert_eq!(
+        client.supports_capability(&Symbol::new(&env, "whitelist")),
+        CapabilityStatus::Supported
+    );
+
+    // 2. After initialization (still in Draft state)
+    client.initialize(&admin);
+    let caps_after_init = client.get_capabilities();
+    expected.initialized = true;
+    assert_eq!(caps_after_init, expected);
+
+    // 3. After setting status to Active
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    let caps_after_active = client.get_capabilities();
+    expected.pause.asset_active = true;
+    expected.pause.operations_enabled = true;
+    assert_eq!(caps_after_active, expected);
+
+    // 3. Read-only / no state changes
+    // Calling capability endpoints must publish no events and not modify balances or storage
+    let events_len = env.events().all().events().len();
+    let _ = client.get_capabilities();
+    let _ = client.supports_capability(&Symbol::new(&env, "whitelist"));
+    let _ = client.get_capability_keys();
+    assert_eq!(env.events().all().events().len(), events_len);
+
+    // 4. Backward compatibility: unknown capability returns Unsupported
+    assert_eq!(
+        client.supports_capability(&Symbol::new(&env, "some_future_capability")),
+        CapabilityStatus::Unsupported
+    );
+
+    // 5. Check capability keys registry agreement
+    let keys = client.get_capability_keys();
+    assert_eq!(keys.len(), 33);
+    assert!(keys.contains(Symbol::new(&env, "whitelist")));
+    assert!(keys.contains(Symbol::new(&env, "rbac")));
+}
+
 // ─── Asset lifecycle invariants (#55) ─────────────────────────────────────────
 
 #[test]
@@ -1819,13 +1871,6 @@ fn test_holding_cap_blocks_mint_over_limit() {
     assert!(r.is_ok());
     assert_eq!(client.get_balance_of(&user2), 500);
 
-    // Before initialize — no auth mocked, no admin in storage.
-    assert_eq!(
-        client.supports_capability(&Symbol::new(&env, "whitelist")),
-        CapabilityStatus::Supported
-    );
-    assert_eq!(client.get_capability_keys().len(), 33);
-
     // Mint that would push the holder over the cap is rejected.
     let r = client.try_mint_asset(&user1, &user2, &1);
     assert!(r.is_err());
@@ -1841,13 +1886,6 @@ fn test_holding_cap_blocks_transfer_over_limit() {
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user1);
     client.whitelist_user(&admin, &user2);
-
-    // And while paused.
-    assert_eq!(
-        client.supports_capability(&Symbol::new(&env, "whitelist")),
-        CapabilityStatus::Supported
-    );
-    assert_eq!(client.get_capability_keys().len(), 33);
 
     // Give user1 a balance, then cap user2's holding at 300.
     client.mint_asset(&user1, &user1, &1000);

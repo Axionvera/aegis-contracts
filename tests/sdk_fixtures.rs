@@ -2249,6 +2249,9 @@ fn fixture_capabilities() {
     }
 
     assert_unique_ids(&scenarios);
+    // Note: The specific contract capability flags (from `src/capabilities.rs`)
+    // are comprehensively verified in the unit test suite (`src/test.rs` under
+    // `test_contract_capabilities`).
     write_or_verify(
         "06-capabilities.json",
         &envelope(
