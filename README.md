@@ -25,6 +25,8 @@ Run the comprehensive test suite locally:
    make test
    ```
 
+> Before opening a PR, run `make verify` (fmt-check + clippy + test + build) -- this is the same gate CI enforces, and failing checks can block PR approval. See the CI & Contributing section below, especially the [Failing CI Response Guide](docs/failing-ci-guide.md), if anything fails.
+
 ### SDK integration fixtures
 Deterministic example outputs for downstream SDK, dashboard, and indexer
 repos live in [`fixtures/sdk/`](fixtures/sdk). They are generated from real
@@ -87,6 +89,16 @@ value-encoding rules, and the no-real-user-data guarantee.
 - [Contributor Experience Review](docs/contributor-experience-review.md) — known onboarding friction and follow-up items
 
 ## CI & Contributing
+
+| Failure type | Where to look | Local fix command |
+|---|---|---|
+| Compilation error | `cargo build` output | `make build` |
+| Test failure | `cargo test` output | `make test` |
+| Formatting | unformatted files | `make fmt` (or `make fmt-check` to check only) |
+| Lint warnings | `cargo clippy` output | `make clippy` |
+| All of the above | full pre-push gate | `make verify` |
+
+See [Failing CI Response Guide](docs/failing-ci-guide.md) for detailed causes and fixes per category.
 
 - [Evaluation Readiness Summary](docs/evaluation-readiness.md) — **central page** summarizing what makes a contribution evaluation-ready: testing standards, CI workflow, PR evidence, acceptance criteria mapping, self-review, and conduct guidance
 - [PR Evidence Checklist](docs/pr-evidence-checklist.md) — **mandatory** evidence checklist for every PR: issue reference, implementation summary, tests, commands run, CI status, and acceptance criteria coverage
