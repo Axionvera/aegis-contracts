@@ -574,6 +574,98 @@ pub fn get_capability_keys(env: &Env) -> Vec<Symbol> {
     ]
 }
 
+// ─── Interface compatibility checks ────────────────────────────────────────────
+
+/// How a client's known schema version relates to this deployment's.
+///
+/// Derived purely from comparing two `u32`s against the append-only
+/// versioning contract described in `docs/capabilities.md`.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SchemaVersionRelation {
+    /// The client was built against exactly this schema version.
+    Matching,
+    /// The client is older than this deployment: the contract may advertise
+    /// fields the client has never heard of. Safe — schema fields are
+    /// append-only, so nothing the client already understands has moved.
+    ClientOlder,
+    /// The client is newer than this deployment: the client may expect
+    /// fields or keys this deployment predates. Check `unsupported_required`
+    /// rather than assuming the mismatch alone is fatal.
+    ClientNewer,
+}
+
+/// Result of checking an SDK/dashboard's expected interface against this
+/// deployment's actual capability surface.
+///
+/// See [`check_interface_compatibility`]. This is a diagnostic, not a
+/// permission check — like [`ContractCapabilities`], it never gates
+/// authorization, only feature availability.
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InterfaceCompatibilityReport {
+    /// This deployment's [`CAPABILITY_SCHEMA_VERSION`].
+    pub contract_schema_version: u32,
+    /// The schema version the calling client was built against.
+    pub client_schema_version: u32,
+    /// How the two versions relate.
+    pub schema_relation: SchemaVersionRelation,
+    /// The subset of `required_capabilities` (from the call) that this
+    /// deployment does **not** resolve to `Supported` — including any key
+    /// the deployment has never heard of, per the fail-safe rule in
+    /// `supports_capability`. Empty means every requirement is met.
+    pub unsupported_required: Vec<Symbol>,
+    /// `true` iff `unsupported_required` is empty. A schema-version mismatch
+    /// alone does not make a client incompatible — only a missing required
+    /// capability does, since fields are append-only.
+    pub compatible: bool,
+}
+
+/// Checks whether a client's required capabilities are all `Supported` by
+/// this deployment, and reports how the client's schema version compares.
+///
+/// `required_capabilities` is the set of capability keys (see
+/// `get_capability_keys`) the calling SDK/dashboard build cannot function
+/// without. This lets integrators — including RWA/compliance tooling that
+/// must not silently degrade — fail fast with a precise, actionable list
+/// instead of discovering a gap mid-transaction.
+///
+/// Pure read: no storage writes, no events, no authorization, never panics.
+/// Always available, including before `initialize`.
+pub fn check_interface_compatibility(
+    env: &Env,
+    client_schema_version: u32,
+    required_capabilities: &Vec<Symbol>,
+) -> InterfaceCompatibilityReport {
+    let contract_schema_version = CAPABILITY_SCHEMA_VERSION;
+
+    let schema_relation = if client_schema_version == contract_schema_version {
+        SchemaVersionRelation::Matching
+    } else if client_schema_version < contract_schema_version {
+        SchemaVersionRelation::ClientOlder
+    } else {
+        SchemaVersionRelation::ClientNewer
+    };
+
+    // Re-derive each requirement from the single source of truth so this
+    // can never disagree with `supports_capability` / `get_capabilities`.
+    let mut unsupported_required: Vec<Symbol> = vec![env];
+    for i in 0..required_capabilities.len() {
+        let key = required_capabilities.get(i).unwrap();
+        if supports_capability(env, &key) != CapabilityStatus::Supported {
+            unsupported_required.push_back(key);
+        }
+    }
+
+    InterfaceCompatibilityReport {
+        contract_schema_version,
+        client_schema_version,
+        schema_relation,
+        compatible: unsupported_required.is_empty(),
+        unsupported_required,
+    }
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 #[contractimpl]
@@ -604,5 +696,20 @@ impl AegisContract {
     /// Never mutates state; always available.
     pub fn get_capability_keys(env: Env) -> Vec<Symbol> {
         get_capability_keys(&env)
+    }
+
+    /// Checks a client's required capability keys against this deployment
+    /// and reports the schema-version relationship, for public-interface
+    /// compatibility checks ahead of integration. See
+    /// `docs/interface-compatibility.md`.
+    ///
+    /// Never mutates state, emits no events, requires no authorization, and
+    /// remains callable before `initialize` and while paused.
+    pub fn check_interface_compatibility(
+        env: Env,
+        client_schema_version: u32,
+        required_capabilities: Vec<Symbol>,
+    ) -> InterfaceCompatibilityReport {
+        check_interface_compatibility(&env, client_schema_version, &required_capabilities)
     }
 }

@@ -64,6 +64,9 @@ value-encoding rules, and the no-real-user-data guarantee.
 
 - [SDK Integration Fixtures](docs/sdk-fixtures.md) — deterministic example outputs for compliance, minting, transfer, event, error, and capability scenarios, for cross-repo testing
 
+- [Contract Capability Flags](docs/capabilities.md) — read-only descriptor of which modules and protocol behaviours a deployment supports, for SDK/dashboard feature gating
+
+- [Public Interface Compatibility Checks](docs/interface-compatibility.md) — how SDK/dashboard clients verify their required capabilities and schema version against a deployment before integrating
 
 - [Investor Holding Restriction Checks](docs/investor-holding-restrictions.md) — per-investor holding cap workflow and enforcement
 

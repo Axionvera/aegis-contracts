@@ -8,8 +8,8 @@ use crate::admin::{
 use crate::asset::{AssetMintedEvent, TransferEvent, YieldDistributedEvent};
 use crate::capabilities::{
     CapabilityStatus, ComplianceCapabilities, ContractCapabilities, EventCapabilities,
-    MetadataCapabilities, MintingCapabilities, PauseCapabilities, TransferCapabilities,
-    CAPABILITY_SCHEMA_VERSION,
+    MetadataCapabilities, MintingCapabilities, PauseCapabilities,
+    SchemaVersionRelation, TransferCapabilities, CAPABILITY_SCHEMA_VERSION,
 };
 
 use crate::compliance::{
@@ -4277,6 +4277,139 @@ fn test_capabilities_advertise_the_compliance_lifecycle() {
     assert!(keys.contains(Symbol::new(&env, "compliance_transitions")));
     assert!(keys.contains(Symbol::new(&env, "compliance_batch_updates")));
     assert!(keys.contains(Symbol::new(&env, "compliance_lifecycle_events")));
+}
+
+// ─── Public interface compatibility checks (#37) ─────────────────────────────
+
+#[test]
+fn test_interface_compatibility_matching_schema_and_supported_keys_is_compatible() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    let required = vec![
+        &env,
+        Symbol::new(&env, "whitelist"),
+        Symbol::new(&env, "transfers"),
+    ];
+    let report =
+        client.check_interface_compatibility(&CAPABILITY_SCHEMA_VERSION, &required);
+
+    assert_eq!(report.contract_schema_version, CAPABILITY_SCHEMA_VERSION);
+    assert_eq!(report.client_schema_version, CAPABILITY_SCHEMA_VERSION);
+    assert_eq!(report.schema_relation, SchemaVersionRelation::Matching);
+    assert_eq!(report.unsupported_required.len(), 0);
+    assert!(report.compatible);
+}
+
+#[test]
+fn test_interface_compatibility_older_client_schema_is_still_compatible() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    // A client built against an earlier schema is forward-compatible as long
+    // as everything it actually asks for is still Supported.
+    let required = vec![&env, Symbol::new(&env, "whitelist")];
+    let report = client.check_interface_compatibility(&1u32, &required);
+
+    assert_eq!(report.schema_relation, SchemaVersionRelation::ClientOlder);
+    assert!(report.compatible);
+}
+
+#[test]
+fn test_interface_compatibility_newer_client_schema_flags_gap_when_relevant() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    // A client from a future schema version claiming a key this deployment
+    // never heard of must be reported, not silently treated as fine.
+    let required = vec![&env, Symbol::new(&env, "some_future_capability")];
+    let newer_version = CAPABILITY_SCHEMA_VERSION + 1;
+    let report = client.check_interface_compatibility(&newer_version, &required);
+
+    assert_eq!(report.schema_relation, SchemaVersionRelation::ClientNewer);
+    assert_eq!(report.unsupported_required.len(), 1);
+    assert!(report
+        .unsupported_required
+        .contains(Symbol::new(&env, "some_future_capability")));
+    assert!(!report.compatible);
+}
+
+#[test]
+fn test_interface_compatibility_reports_every_unsupported_required_key() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    // `burning` is a real, permanently Unsupported key (no burn entrypoint).
+    // `allowances` is Planned, which also does not count as Supported.
+    let required = vec![
+        &env,
+        Symbol::new(&env, "whitelist"),
+        Symbol::new(&env, "burning"),
+        Symbol::new(&env, "allowances"),
+    ];
+    let report =
+        client.check_interface_compatibility(&CAPABILITY_SCHEMA_VERSION, &required);
+
+    assert_eq!(report.unsupported_required.len(), 2);
+    assert!(report
+        .unsupported_required
+        .contains(Symbol::new(&env, "burning")));
+    assert!(report
+        .unsupported_required
+        .contains(Symbol::new(&env, "allowances")));
+    assert!(!report.compatible);
+}
+
+#[test]
+fn test_interface_compatibility_empty_requirements_always_compatible() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    // No requirements means nothing to fail on, regardless of schema drift.
+    let required = vec![&env];
+    let newer_version = CAPABILITY_SCHEMA_VERSION + 5;
+    let report = client.check_interface_compatibility(&newer_version, &required);
+
+    assert!(report.unsupported_required.is_empty());
+    assert!(report.compatible);
+}
+
+#[test]
+fn test_interface_compatibility_agrees_with_supports_capability() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    // Cross-check against the independent single-key resolver so the two
+    // entrypoints can never silently disagree.
+    let key = Symbol::new(&env, "decimals"); // Planned, not Supported.
+    let required = vec![&env, key.clone()];
+    let report =
+        client.check_interface_compatibility(&CAPABILITY_SCHEMA_VERSION, &required);
+
+    let direct_status = client.supports_capability(&key);
+    assert_ne!(direct_status, CapabilityStatus::Supported);
+    assert!(report.unsupported_required.contains(key));
+}
+
+#[test]
+fn test_interface_compatibility_never_mutates_and_works_before_initialize() {
+    let (env, client, _admin, _user1, _user2) = setup();
+
+    // No auth mocked and no initialize() call — must still answer safely.
+    let required = vec![&env, Symbol::new(&env, "whitelist")];
+    let report = client.check_interface_compatibility(&CAPABILITY_SCHEMA_VERSION, &required);
+    assert!(report.compatible);
+
+    // Re-running it changes nothing about contract state.
+    let total_supply_before = client.get_total_supply();
+    let _ = client.check_interface_compatibility(&CAPABILITY_SCHEMA_VERSION, &required);
+    assert_eq!(client.get_total_supply(), total_supply_before);
 }
 
 #[test]
