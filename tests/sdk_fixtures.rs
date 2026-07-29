@@ -28,16 +28,49 @@
 
 mod support;
 
-use soroban_sdk::{Address, String as SorobanString};
+use soroban_sdk::{Address, IntoVal, String as SorobanString};
 
-use aegis_contracts::compliance::{ComplianceBatchUpdate, ComplianceStatus};
-use aegis_contracts::lifecycle::AssetStatus;
-use aegis_contracts::{Error, Role};
+use aegis_contracts::admin::{
+    AdminTransferInitiatedEvent, AdminTransferredEvent, ContractPausedEvent, ContractUnpausedEvent,
+    RoleAssignedEvent, RoleRevokedEvent,
+};
+use aegis_contracts::asset::{
+    AssetMetadataUpdatedEvent, AssetMintedEvent, TransferEvent, YieldDistributedEvent,
+};
+use aegis_contracts::compliance::{
+    ComplianceBatchUpdate, ComplianceStatus, ComplianceStatusChangedEvent, UserWhitelistedEvent,
+    WhitelistRevokedEvent,
+};
+use aegis_contracts::config::{ConfigAmendedEvent, ConfigProposedEvent, ProtocolConfig};
+use aegis_contracts::holding::{HoldingCapAmendedEvent, HoldingCapProposedEvent};
+use aegis_contracts::lifecycle::{AssetStatus, AssetStatusChangedEvent};
+use aegis_contracts::supply_cap::{SupplyCapAmendedEvent, SupplyCapProposedEvent};
+use aegis_contracts::{ContractInitializedEvent, Error, Role};
 
 use support::{
     assert_unique_ids, envelope, write_or_verify, Harness, Json, JsonObj, Scenario, ACTORS,
     ADDRESS_DERIVATION_SEED, CONTRACT_ADDRESS,
 };
+
+/// Compile-time typed event expectation used by the fixture generator.
+///
+/// The payload expression must construct the contract's exported event type.
+/// The resulting values are compared to the live Soroban event sequence
+/// before that sequence is serialized to JSON/XDR, so update mode cannot
+/// silently bless a schema or ordering regression.
+macro_rules! typed_events {
+    ($harness:expr, $(($topic:literal, $payload:expr)),+ $(,)?) => {{
+        let h = &$harness;
+        h.assert_events(soroban_sdk::vec![
+            &h.env,
+            $((
+                h.contract_id.clone(),
+                ($topic,).into_val(&h.env),
+                $payload.into_val(&h.env),
+            )),+
+        ])
+    }};
+}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -974,14 +1007,50 @@ fn fixture_events() {
         push_event(
             "event-user-whitelisted",
             "Topic `user_whitelisted`, emitted by `whitelist_user`.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "compliance_status_changed",
+                    ComplianceStatusChangedEvent {
+                        caller: h.actor("compliance_officer"),
+                        user: h.actor("investor_carol"),
+                        previous_status: ComplianceStatus::Unknown,
+                        new_status: ComplianceStatus::Approved,
+                    }
+                ),
+                (
+                    "user_whitelisted",
+                    UserWhitelistedEvent {
+                        caller: h.actor("compliance_officer"),
+                        user: h.actor("investor_carol"),
+                    }
+                ),
+            ),
         );
 
         c.revoke_whitelist(&h.actor("compliance_officer"), &h.actor("investor_carol"));
         push_event(
             "event-whitelist-revoked",
             "Topic `whitelist_revoked`, emitted by `revoke_whitelist`.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "compliance_status_changed",
+                    ComplianceStatusChangedEvent {
+                        caller: h.actor("compliance_officer"),
+                        user: h.actor("investor_carol"),
+                        previous_status: ComplianceStatus::Approved,
+                        new_status: ComplianceStatus::Revoked,
+                    }
+                ),
+                (
+                    "whitelist_revoked",
+                    WhitelistRevokedEvent {
+                        caller: h.actor("compliance_officer"),
+                        user: h.actor("investor_carol"),
+                    }
+                ),
+            ),
         );
     }
 
@@ -997,14 +1066,35 @@ fn fixture_events() {
         push_event(
             "event-asset-minted",
             "Topic `asset_minted`. `total_supply` is cumulative across all holders.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "asset_minted",
+                    AssetMintedEvent {
+                        caller: h.actor("asset_manager"),
+                        to: h.actor("investor_alice"),
+                        amount: 1_000,
+                        total_supply: 1_000,
+                    }
+                ),
+            ),
         );
 
         c.transfer(&h.actor("investor_alice"), &h.actor("investor_bob"), &250);
         push_event(
             "event-transfer",
             "Topic `transfer`, emitted on every successful transfer.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "transfer",
+                    TransferEvent {
+                        from: h.actor("investor_alice"),
+                        to: h.actor("investor_bob"),
+                        amount: 250,
+                    }
+                ),
+            ),
         );
 
         c.distribute_yield(&h.actor("asset_manager"), &500);
@@ -1012,7 +1102,16 @@ fn fixture_events() {
             "event-yield-distributed",
             "Topic `yield_distributed`. The current implementation is a mock that \
              emits the event without moving balances (see asset.rs).",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "yield_distributed",
+                    YieldDistributedEvent {
+                        caller: h.actor("asset_manager"),
+                        amount: 500,
+                    }
+                ),
+            ),
         );
     }
 
@@ -1024,7 +1123,15 @@ fn fixture_events() {
         push_event(
             "event-contract-initialized",
             "Topic `contract_initialized`, emitted once on single-initialization.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "contract_initialized",
+                    ContractInitializedEvent {
+                        admin: h.actor("admin"),
+                    }
+                ),
+            ),
         );
 
         c.set_role(
@@ -1036,28 +1143,66 @@ fn fixture_events() {
             "event-role-assigned",
             "Topic `role_assigned`. The `role` field is a unit enum, encoded as a \
              single-element vector holding the variant name.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "role_assigned",
+                    RoleAssignedEvent {
+                        admin: h.actor("admin"),
+                        target: h.actor("compliance_officer"),
+                        role: Role::ComplianceOfficer,
+                    }
+                ),
+            ),
         );
 
         c.remove_role(&h.actor("admin"), &h.actor("compliance_officer"));
         push_event(
             "event-role-revoked",
             "Topic `role_revoked`. `role` carries the *previous* role, not None.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "role_revoked",
+                    RoleRevokedEvent {
+                        admin: h.actor("admin"),
+                        target: h.actor("compliance_officer"),
+                        role: Role::ComplianceOfficer,
+                    }
+                ),
+            ),
         );
 
         c.transfer_admin(&h.actor("admin"), &h.actor("investor_carol"));
         push_event(
             "event-admin-transfer-initiated",
             "Topic `admin_transfer_initiated`, step 1 of the 2-step admin handoff.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "admin_transfer_initiated",
+                    AdminTransferInitiatedEvent {
+                        current_admin: h.actor("admin"),
+                        candidate: h.actor("investor_carol"),
+                    }
+                ),
+            ),
         );
 
         c.accept_admin(&h.actor("investor_carol"));
         push_event(
             "event-admin-transferred",
             "Topic `admin_transferred`, step 2. The candidate must call `accept_admin`.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "admin_transferred",
+                    AdminTransferredEvent {
+                        previous_admin: h.actor("admin"),
+                        new_admin: h.actor("investor_carol"),
+                    }
+                ),
+            ),
         );
 
         // `renounce_admin` reuses the `AdminTransferredEvent` payload but
@@ -1071,7 +1216,16 @@ fn fixture_events() {
              It reuses the AdminTransferredEvent payload with `new_admin` equal to \
              `previous_admin`, so the topic — not the payload — is what distinguishes \
              a renounce from a transfer. After this the contract has no admin.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "admin_renounced",
+                    AdminTransferredEvent {
+                        previous_admin: h.actor("investor_carol"),
+                        new_admin: h.actor("investor_carol"),
+                    }
+                ),
+            ),
         );
     }
 
@@ -1084,14 +1238,30 @@ fn fixture_events() {
             "event-contract-paused",
             "Topic `contract_paused`. An EmergencyOfficer may pause; only the admin \
              may unpause.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "contract_paused",
+                    ContractPausedEvent {
+                        admin: h.actor("emergency_officer"),
+                    }
+                ),
+            ),
         );
 
         c.unpause(&h.actor("admin"));
         push_event(
             "event-contract-unpaused",
             "Topic `contract_unpaused`, emitted by the admin-only `unpause`.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "contract_unpaused",
+                    ContractUnpausedEvent {
+                        admin: h.actor("admin"),
+                    }
+                ),
+            ),
         );
     }
 
@@ -1105,28 +1275,68 @@ fn fixture_events() {
         push_event(
             "event-supply-cap-proposed",
             "Topic `supply_cap_proposed`, step 1 of supply cap governance.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "supply_cap_proposed",
+                    SupplyCapProposedEvent {
+                        admin: h.actor("admin"),
+                        current_cap: 0,
+                        proposed_cap: 10_000,
+                    }
+                ),
+            ),
         );
 
         c.accept_supply_cap(&admin);
         push_event(
             "event-supply-cap-amended",
             "Topic `supply_cap_amended`, step 2 — the cap is now enforced.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "supply_cap_amended",
+                    SupplyCapAmendedEvent {
+                        admin: h.actor("admin"),
+                        previous_cap: 0,
+                        new_cap: 10_000,
+                    }
+                ),
+            ),
         );
 
         c.propose_holding_cap(&admin, &2_000);
         push_event(
             "event-holding-cap-proposed",
             "Topic `holding_cap_proposed`, step 1 of holding cap governance.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "holding_cap_proposed",
+                    HoldingCapProposedEvent {
+                        admin: h.actor("admin"),
+                        current_cap: 0,
+                        proposed_cap: 2_000,
+                    }
+                ),
+            ),
         );
 
         c.accept_holding_cap(&admin);
         push_event(
             "event-holding-cap-amended",
             "Topic `holding_cap_amended`, step 2 — the per-investor cap is now enforced.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "holding_cap_amended",
+                    HoldingCapAmendedEvent {
+                        admin: h.actor("admin"),
+                        previous_cap: 0,
+                        new_cap: 2_000,
+                    }
+                ),
+            ),
         );
     }
 
@@ -1136,7 +1346,7 @@ fn fixture_events() {
         let c = h.client();
         let admin = h.actor("admin");
 
-        let config = aegis_contracts::config::ProtocolConfig {
+        let config = ProtocolConfig {
             min_transfer_amount: 100,
             max_batch_size: 50,
         };
@@ -1145,14 +1355,32 @@ fn fixture_events() {
         push_event(
             "event-config-proposed",
             "Topic `config_proposed`, step 1 of protocol config governance.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "config_proposed",
+                    ConfigProposedEvent {
+                        admin: h.actor("admin"),
+                        proposed_config: config.clone(),
+                    }
+                ),
+            ),
         );
 
         c.accept_config(&admin);
         push_event(
             "event-config-amended",
             "Topic `config_amended`, step 2 — the new config is now active.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "config_amended",
+                    ConfigAmendedEvent {
+                        admin: h.actor("admin"),
+                        new_config: config,
+                    }
+                ),
+            ),
         );
     }
 
@@ -1166,21 +1394,41 @@ fn fixture_events() {
             "event-asset-status-changed",
             "Topic `asset_status_changed`. Both statuses are unit enums encoded as \
              single-element vectors.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "asset_status_changed",
+                    AssetStatusChangedEvent {
+                        admin: h.actor("admin"),
+                        previous_status: AssetStatus::Active,
+                        new_status: AssetStatus::Paused,
+                    }
+                ),
+            ),
         );
 
         c.set_asset_status(&h.actor("admin"), &AssetStatus::Active);
-        c.update_asset_metadata(
-            &h.actor("asset_manager"),
-            &SorobanString::from_str(&h.env, "Aegis Sample Tower"),
-            &SorobanString::from_str(&h.env, "AST"),
-            &SorobanString::from_str(&h.env, "https://example.invalid/aegis/sample-tower.json"),
-        );
+        let name = SorobanString::from_str(&h.env, "Aegis Sample Tower");
+        let symbol = SorobanString::from_str(&h.env, "AST");
+        let uri =
+            SorobanString::from_str(&h.env, "https://example.invalid/aegis/sample-tower.json");
+        c.update_asset_metadata(&h.actor("asset_manager"), &name, &symbol, &uri);
         push_event(
             "event-asset-metadata-updated",
             "Topic `asset_metadata_updated`. The URI is a documentation-only \
              `example.invalid` host and resolves nowhere.",
-            h.events(),
+            typed_events!(
+                h,
+                (
+                    "asset_metadata_updated",
+                    AssetMetadataUpdatedEvent {
+                        caller: h.actor("asset_manager"),
+                        name,
+                        symbol,
+                        uri,
+                    }
+                ),
+            ),
         );
     }
 
@@ -1193,8 +1441,7 @@ fn fixture_events() {
 
         let result = c.try_transfer(&alice, &dave, &100);
         assert_eq!(result, Err(Ok(Error::ReceiverNotWhitelisted)));
-        let events = h.events();
-        assert_eq!(events, Json::Arr(vec![]));
+        let events = h.assert_no_events();
 
         scenarios.push(
             Scenario::new(
