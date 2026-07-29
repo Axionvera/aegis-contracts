@@ -1,7 +1,7 @@
 #![cfg(test)]
 
+use crate::{config::ProtocolConfig, AegisContract, AegisContractClient, Error, Role};
 use soroban_sdk::{testutils::Address as _, Address, Env};
-use crate::{AegisContract, AegisContractClient, config::ProtocolConfig, Error, Role};
 
 fn setup() -> (Env, AegisContractClient<'static>, Address, Address) {
     let env = Env::default();
@@ -34,9 +34,12 @@ fn test_propose_and_accept_config() {
 
     // 1. Propose
     client.propose_config(&admin, &new_config);
-    
+
     // Verify candidate is set
-    assert_eq!(client.get_pending_protocol_config(), Some(new_config.clone()));
+    assert_eq!(
+        client.get_pending_protocol_config(),
+        Some(new_config.clone())
+    );
     // Verify active is not changed yet
     assert_eq!(client.get_protocol_config().min_transfer_amount, 0);
 

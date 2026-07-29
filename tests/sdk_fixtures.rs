@@ -41,6 +41,7 @@ use aegis_contracts::compliance::{
     ComplianceBatchUpdate, ComplianceStatus, ComplianceStatusChangedEvent, UserWhitelistedEvent,
     WhitelistRevokedEvent,
 };
+use aegis_contracts::compliance_guards::TransitionGuard;
 use aegis_contracts::config::{ConfigAmendedEvent, ConfigProposedEvent, ProtocolConfig};
 use aegis_contracts::holding::{HoldingCapAmendedEvent, HoldingCapProposedEvent};
 use aegis_contracts::lifecycle::{AssetStatus, AssetStatusChangedEvent};
@@ -458,7 +459,75 @@ fn fixture_compliance() {
         );
     }
 
-    // 5 — role read surface.
+    // 5 — pre-flight transition guard: allowed, and refused with a reason.
+    {
+        let h = Harness::new();
+        let c = h.client();
+        c.initialize(&h.actor("admin"));
+        c.set_role(
+            &h.actor("admin"),
+            &h.actor("compliance_officer"),
+            &Role::ComplianceOfficer,
+        );
+
+        let officer = h.actor("compliance_officer");
+        let alice = h.actor("investor_alice");
+        let allowed = c.check_compliance_transition(&officer, &alice, &ComplianceStatus::Approved);
+        assert!(allowed.allowed);
+        assert_eq!(allowed.reason, TransitionGuard::Allowed);
+
+        scenarios.push(
+            Scenario::new(
+                "check-compliance-transition-allowed",
+                "Pre-flight read: a ComplianceOfficer may approve an unknown address.                  The verdict comes from the same evaluation the write path enforces,                  so `allowed: true` means `set_compliance_status` would commit                  against this ledger state. Pure read — no events, no writes.",
+            )
+            .set("call", Json::str("check_compliance_transition"))
+            .set(
+                "args",
+                Json::Arr(vec![
+                    Json::str("compliance_officer"),
+                    Json::str("investor_alice"),
+                    Json::str("Approved"),
+                ]),
+            )
+            .set("returns", h.render(allowed))
+            .build(),
+        );
+
+        // A frozen address may only be released by the supreme admin, and the
+        // guard says so specifically rather than returning a bare
+        // "unauthorized" — the officer needs an escalation, not a role.
+        let bob = h.actor("investor_bob");
+        c.set_compliance_status(&officer, &bob, &ComplianceStatus::Blocked);
+        let refused = c.check_compliance_transition(&officer, &bob, &ComplianceStatus::Pending);
+        assert!(!refused.allowed);
+        assert_eq!(refused.reason, TransitionGuard::BlockedRequiresAdmin);
+        assert_eq!(refused.error_code, Some(Error::Unauthorized as u32));
+
+        scenarios.push(
+            Scenario::new(
+                "check-compliance-transition-blocked-requires-admin",
+                "Pre-flight read: the same ComplianceOfficer is refused for a \
+                 `Blocked` address. `reason` distinguishes an admin-only freeze from \
+                 a missing role even though both surface as `Unauthorized` (3000) \
+                 on-chain, and `error_code` pre-resolves the code a submission would \
+                 revert with.",
+            )
+            .set("call", Json::str("check_compliance_transition"))
+            .set(
+                "args",
+                Json::Arr(vec![
+                    Json::str("compliance_officer"),
+                    Json::str("investor_bob"),
+                    Json::str("Pending"),
+                ]),
+            )
+            .set("returns", h.render(refused))
+            .build(),
+        );
+    }
+
+    // 6 — role read surface.
     {
         let h = bootstrap();
         let c = h.client();
@@ -1808,33 +1877,34 @@ fn fixture_errors() {
         );
     }
 
-    // 7000 — AssetNotActive.
+    // 7002 — AssetBlockedRestriction (asset still in Draft).
     {
         let h = Harness::new();
         let c = h.client();
         c.initialize(&h.actor("admin"));
         let r = c.try_mint_asset(&h.actor("admin"), &h.actor("investor_alice"), &100);
         push_err(
-            "error-7000-asset-not-active",
+            "error-7002-asset-blocked-restriction-draft",
             "The asset lifecycle status is Draft (not Active), so issuance and transfers are \
-             blocked.",
+             blocked. Reported as the granular restriction code `7002`, not the reserved \
+             `6000 AssetNotActive` it superseded (see docs/error-codes.md).",
             "mint_asset",
-            expect_err(r, Error::AssetNotActive),
+            expect_err(r, Error::AssetBlockedRestriction),
         );
     }
 
-    // 7001 — AssetLifecyclePaused.
+    // 7000 — AssetPausedRestriction.
     {
         let h = bootstrap();
         let c = h.client();
         c.set_asset_status(&h.actor("admin"), &AssetStatus::Paused);
         let r = c.try_mint_asset(&h.actor("asset_manager"), &h.actor("investor_alice"), &100);
         push_err(
-            "error-7001-asset-lifecycle-paused",
+            "error-7000-asset-paused-restriction",
             "The asset lifecycle status is Paused, so issuance and transfers are \
              blocked. Distinct from the global contract pause (3004).",
             "mint_asset",
-            expect_err(r, Error::AssetLifecyclePaused),
+            expect_err(r, Error::AssetPausedRestriction),
         );
     }
 
@@ -1933,7 +2003,7 @@ fn fixture_errors() {
         Error::ReceiverNotWhitelisted,
         Error::InvalidAmount,
         Error::InsufficientBalance,
-        Error::AssetNotActive,
+        Error::AssetBlockedRestriction,
         Error::InvalidLifecycleTransition,
         Error::AssetMetadataUpdateBlocked,
     ];

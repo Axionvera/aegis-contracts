@@ -17,7 +17,7 @@ use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey};
 /// does not know about. Fields are append-only: never remove or repurpose an
 /// existing field or key (same stability contract as `docs/events.md` topics
 /// and `docs/error-codes.md` numeric codes).
-pub const CAPABILITY_SCHEMA_VERSION: u32 = 3;
+pub const CAPABILITY_SCHEMA_VERSION: u32 = 4;
 
 // ─── Response types ───────────────────────────────────────────────────────────
 
@@ -72,6 +72,13 @@ pub struct ComplianceCapabilities {
     /// `is_compliance_transition_allowed` /
     /// `get_allowed_compliance_transitions`.
     pub lifecycle_transitions: CapabilityStatus,
+    /// Pre-flight transition guards (`check_compliance_transition`,
+    /// `get_compliance_transition_guard`, `check_compliance_batch`), which
+    /// return the typed reason a status change would be refused instead of
+    /// only a boolean. Evaluated by the same code the write path enforces, so
+    /// a client can disable an illegal action without simulating it. See
+    /// `docs/compliance-transition-guards.md`.
+    pub transition_guards: CapabilityStatus,
     /// Aggregated read helpers (`get_investor_eligibility`,
     /// `check_transfer_eligibility`).
     pub eligibility_reads: CapabilityStatus,
@@ -332,6 +339,7 @@ pub fn get_capabilities(env: &Env) -> ContractCapabilities {
             investor_tiers: CapabilityStatus::Unsupported,
             lifecycle_states: CapabilityStatus::Supported,
             lifecycle_transitions: CapabilityStatus::Supported,
+            transition_guards: CapabilityStatus::Supported,
             eligibility_reads: CapabilityStatus::Supported,
             enforced_on_mint: true,
             enforced_on_transfer: true,
@@ -446,6 +454,9 @@ pub fn supports_capability(env: &Env, capability: &Symbol) -> CapabilityStatus {
     }
     if *capability == Symbol::new(env, "compliance_transitions") {
         return caps.compliance.lifecycle_transitions;
+    }
+    if *capability == Symbol::new(env, "compliance_transition_guards") {
+        return caps.compliance.transition_guards;
     }
     if *capability == Symbol::new(env, "eligibility_reads") {
         return caps.compliance.eligibility_reads;

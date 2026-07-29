@@ -27,8 +27,9 @@
 
 use soroban_sdk::{contractimpl, contracttype, vec, Address, Env, Vec};
 
-use crate::admin::{get_admin, require_any_role, require_not_paused};
-use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error, Role};
+use crate::admin::require_not_paused;
+use crate::compliance_guards::{require_transition, require_transition_authority};
+use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error};
 
 // ─── Lifecycle state ──────────────────────────────────────────────────────────
 
@@ -214,28 +215,6 @@ fn write_status(env: &Env, user: &Address, status: &ComplianceStatus) {
     }
 }
 
-/// Authorization for a lifecycle transition.
-///
-/// Leaving `Blocked` is restricted to the supreme admin, mirroring the
-/// pause/unpause asymmetry in `admin.rs`: a compromised or coerced compliance
-/// officer must not be able to lift a sanctions freeze. Every other
-/// transition — including *entering* `Blocked` — is available to a
-/// ComplianceOfficer, an EmergencyOfficer, or the admin.
-fn require_transition_authority(env: &Env, caller: &Address, from: &ComplianceStatus) {
-    if from.is_blocked() {
-        if *caller != get_admin(env) {
-            soroban_sdk::panic_with_error!(env, Error::Unauthorized);
-        }
-        return;
-    }
-
-    require_any_role(
-        env,
-        caller,
-        &[Role::ComplianceOfficer, Role::EmergencyOfficer],
-    );
-}
-
 /// Applies a validated transition and emits `compliance_status_changed`.
 /// Assumes the caller has already been authorized.
 fn apply_transition(
@@ -258,6 +237,13 @@ fn apply_transition(
     );
 }
 
+/// Resolves the current status and enforces every transition guard against it,
+/// returning the status the write will be applied over.
+///
+/// The rules themselves live in [`crate::compliance_guards`] and are shared
+/// with the pre-flight read entrypoints, so a client that was told a
+/// transition is allowed cannot be refused by a different rule here — and vice
+/// versa. See `docs/compliance-transition-guards.md`.
 fn validate_transition(
     env: &Env,
     caller: &Address,
@@ -265,15 +251,7 @@ fn validate_transition(
     new_status: &ComplianceStatus,
 ) -> Result<ComplianceStatus, Error> {
     let current = get_compliance_status(env, user);
-    require_transition_authority(env, caller, &current);
-
-    if current == *new_status {
-        return Err(Error::ComplianceStatusUnchanged);
-    }
-    if !transition_is_allowed(&current, new_status) {
-        return Err(Error::InvalidComplianceTransition);
-    }
-
+    require_transition(env, caller, &current, new_status)?;
     Ok(current)
 }
 

@@ -17,6 +17,8 @@ use crate::compliance::{
     WhitelistRevokedEvent,
 };
 
+use crate::compliance_guards::TransitionGuard;
+
 use crate::eligibility::InvestorEligibility;
 use crate::lifecycle::{AssetStatus, AssetStatusChangedEvent};
 
@@ -1500,6 +1502,7 @@ fn default_capabilities(env: &Env) -> ContractCapabilities {
             investor_tiers: CapabilityStatus::Unsupported,
             lifecycle_states: CapabilityStatus::Supported,
             lifecycle_transitions: CapabilityStatus::Supported,
+            transition_guards: CapabilityStatus::Supported,
             eligibility_reads: CapabilityStatus::Supported,
             enforced_on_mint: true,
             enforced_on_transfer: true,
@@ -3125,7 +3128,7 @@ fn test_compliance_transition_events_have_exact_shape() {
     fixture
         .client
         .revoke_whitelist(&fixture.emergency, &fixture.target);
-    
+
     assert_eq!(
         fixture.env.events().all(),
         vec![
@@ -3152,7 +3155,6 @@ fn test_compliance_transition_events_have_exact_shape() {
             ),
         ]
     );
-
 }
 
 #[test]
@@ -4532,4 +4534,502 @@ fn test_repeated_rejected_mint_attempts_never_mutate_state() {
     client.mint_asset(&user1, &user2, &100);
     assert_eq!(client.get_balance_of(&user2), 100);
     assert_eq!(client.get_total_supply(), 100);
+}
+
+// ─── COMPLIANCE STATUS TRANSITION GUARDS ──────────────────────────────────────
+//
+// The guard module (src/compliance_guards.rs) is the single evaluation shared
+// by the pre-flight read entrypoints and by every state-changing compliance
+// call. The invariant these tests exist to protect is therefore not "the guard
+// returns the right answer" in isolation, but that the guard's answer and the
+// contract's actual behaviour can never disagree — that is what makes it safe
+// for a dashboard to disable an action, or an SDK to skip a simulation, on the
+// strength of a read. The model is documented in
+// docs/compliance-transition-guards.md.
+
+/// Drives `user` into `target` on a freshly initialized contract, using the
+/// admin so the seeding itself can never be refused by a role check.
+///
+/// Only legal edges are used, so seeding exercises the same matrix under test
+/// instead of writing storage behind its back.
+fn seed_status(
+    client: &AegisContractClient<'static>,
+    admin: &Address,
+    user: &Address,
+    target: ComplianceStatus,
+) {
+    match target {
+        ComplianceStatus::Unknown => {}
+        ComplianceStatus::Pending => {
+            client.set_compliance_status(admin, user, &ComplianceStatus::Pending);
+        }
+        ComplianceStatus::Approved => {
+            client.set_compliance_status(admin, user, &ComplianceStatus::Approved);
+        }
+        ComplianceStatus::Revoked => {
+            client.set_compliance_status(admin, user, &ComplianceStatus::Pending);
+            client.set_compliance_status(admin, user, &ComplianceStatus::Revoked);
+        }
+        ComplianceStatus::Blocked => {
+            client.set_compliance_status(admin, user, &ComplianceStatus::Blocked);
+        }
+    }
+    assert_eq!(client.get_compliance_status(user), target, "seeding failed");
+}
+
+/// A fresh deployment with an admin, a ComplianceOfficer, and an investor.
+fn setup_guard_world() -> (Env, AegisContractClient<'static>, Address, Address, Address) {
+    let (env, client, admin, officer, investor) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_role(&admin, &officer, &Role::ComplianceOfficer);
+    (env, client, admin, officer, investor)
+}
+
+/// Asserts that a pre-flight verdict and a real submission agree, and returns
+/// nothing — the assertion *is* the point.
+fn assert_guard_matches_execution(
+    client: &AegisContractClient<'static>,
+    caller: &Address,
+    user: &Address,
+    target: ComplianceStatus,
+) {
+    let check = client.check_compliance_transition(caller, user, &target);
+    let before = client.get_compliance_status(user);
+    let result = client.try_set_compliance_status(caller, user, &target);
+
+    match result {
+        Ok(_) => {
+            assert!(
+                check.allowed,
+                "guard rejected ({:?} -> {:?}) with {:?} but the call succeeded",
+                before, target, check.reason
+            );
+            assert_eq!(check.error_code, None);
+            assert_eq!(
+                client.get_compliance_status(user),
+                target,
+                "committed transition did not reach the requested status"
+            );
+        }
+        Err(Ok(err)) => {
+            assert!(
+                !check.allowed,
+                "guard allowed ({:?} -> {:?}) but the call reverted with {:?}",
+                before, target, err
+            );
+            assert_eq!(
+                check.error_code,
+                Some(err as u32),
+                "guard predicted a different error code for ({:?} -> {:?})",
+                before,
+                target
+            );
+            assert_eq!(
+                client.get_compliance_status(user),
+                before,
+                "a rejected transition changed the stored status"
+            );
+        }
+        Err(Err(err)) => panic!("unexpected host error: {err:?}"),
+    }
+}
+
+#[test]
+fn test_guard_matches_enforcement_for_every_edge_as_officer() {
+    // 5 source statuses x 5 targets = the complete edge space, each on its own
+    // deployment so the result depends only on the pair under test.
+    for from in ALL_STATUSES {
+        for to in ALL_STATUSES {
+            let (_env, client, admin, officer, investor) = setup_guard_world();
+            seed_status(&client, &admin, &investor, from);
+            assert_guard_matches_execution(&client, &officer, &investor, to);
+        }
+    }
+}
+
+#[test]
+fn test_guard_matches_enforcement_for_every_edge_as_admin() {
+    // The admin bypasses role checks, so this pass covers the edges an officer
+    // can never reach — in particular the admin-only exit from `Blocked`.
+    for from in ALL_STATUSES {
+        for to in ALL_STATUSES {
+            let (_env, client, admin, _officer, investor) = setup_guard_world();
+            seed_status(&client, &admin, &investor, from);
+            assert_guard_matches_execution(&client, &admin, &investor, to);
+        }
+    }
+}
+
+#[test]
+fn test_guard_matches_enforcement_for_every_edge_as_unauthorized_caller() {
+    // A caller with a wrong-scoped role must be refused on every edge, and the
+    // guard must say so in advance rather than letting a client discover it
+    // from a revert.
+    for from in ALL_STATUSES {
+        for to in ALL_STATUSES {
+            let (_env, client, admin, _officer, investor) = setup_guard_world();
+            let outsider = Address::generate(&_env);
+            client.set_role(&admin, &outsider, &Role::AssetManager);
+            seed_status(&client, &admin, &investor, from);
+
+            let check = client.check_compliance_transition(&outsider, &investor, &to);
+            assert!(!check.allowed);
+            assert!(check.reason.is_authorization_failure());
+            assert_guard_matches_execution(&client, &outsider, &investor, to);
+        }
+    }
+}
+
+#[test]
+fn test_guard_reports_blocked_requires_admin_not_generic_unauthorized() {
+    let (_env, client, admin, officer, investor) = setup_guard_world();
+    seed_status(&client, &admin, &investor, ComplianceStatus::Blocked);
+
+    // The officer holds a valid compliance role, so "you lack a role" would be
+    // the wrong explanation: the refusal is specific to leaving `Blocked`.
+    let check = client.check_compliance_transition(&officer, &investor, &ComplianceStatus::Pending);
+    assert!(!check.allowed);
+    assert_eq!(check.reason, TransitionGuard::BlockedRequiresAdmin);
+    assert_eq!(check.error_code, Some(Error::Unauthorized as u32));
+
+    // A caller with no role at all gets the same refusal for a blocked
+    // address — the block, not the missing role, is the binding constraint.
+    let nobody = Address::generate(&_env);
+    let nobody_check =
+        client.check_compliance_transition(&nobody, &investor, &ComplianceStatus::Pending);
+    assert_eq!(nobody_check.reason, TransitionGuard::BlockedRequiresAdmin);
+
+    // Only the admin may lift it, and only into re-review.
+    let admin_check =
+        client.check_compliance_transition(&admin, &investor, &ComplianceStatus::Pending);
+    assert!(admin_check.allowed);
+    let admin_direct =
+        client.check_compliance_transition(&admin, &investor, &ComplianceStatus::Approved);
+    assert!(!admin_direct.allowed);
+    assert_eq!(admin_direct.reason, TransitionGuard::TransitionForbidden);
+}
+
+#[test]
+fn test_guard_reports_status_unchanged_for_every_self_edge() {
+    for status in ALL_STATUSES {
+        let (_env, client, admin, _officer, investor) = setup_guard_world();
+        seed_status(&client, &admin, &investor, status);
+
+        let check = client.check_compliance_transition(&admin, &investor, &status);
+        assert!(!check.allowed);
+        // `Blocked -> Blocked` is refused for authority before it is ever
+        // compared, because only the admin may act on a blocked address; the
+        // admin used here reaches the no-op rule itself.
+        assert_eq!(check.reason, TransitionGuard::StatusUnchanged);
+        assert_eq!(
+            check.error_code,
+            Some(Error::ComplianceStatusUnchanged as u32)
+        );
+    }
+}
+
+#[test]
+fn test_guard_reports_target_unknown_as_its_own_reason() {
+    // `Unknown` is unreachable from every source, including itself. It gets a
+    // dedicated reason so a client can drop it from the target list entirely
+    // instead of showing an edge that can never be offered.
+    for from in ALL_STATUSES {
+        let (_env, client, admin, _officer, investor) = setup_guard_world();
+        seed_status(&client, &admin, &investor, from);
+
+        let check =
+            client.check_compliance_transition(&admin, &investor, &ComplianceStatus::Unknown);
+        assert!(!check.allowed);
+        let expected = if from == ComplianceStatus::Unknown {
+            // The no-op rule is evaluated first, so an already-unknown address
+            // reports the more specific "nothing would change".
+            TransitionGuard::StatusUnchanged
+        } else {
+            TransitionGuard::TargetUnknownForbidden
+        };
+        assert_eq!(check.reason, expected, "from {from:?}");
+    }
+}
+
+#[test]
+fn test_guard_reports_pause_ahead_of_authority() {
+    let (_env, client, admin, officer, investor) = setup_guard_world();
+    seed_status(&client, &admin, &investor, ComplianceStatus::Pending);
+    client.pause(&admin);
+
+    // The pause is reported first for every caller class, so a paused contract
+    // never leaks whether a caller would otherwise have qualified.
+    let outsider = Address::generate(&_env);
+    for caller in [&admin, &officer, &outsider] {
+        let check =
+            client.check_compliance_transition(caller, &investor, &ComplianceStatus::Approved);
+        assert!(!check.allowed);
+        assert_eq!(check.reason, TransitionGuard::ContractPaused);
+        assert_eq!(check.error_code, Some(Error::ContractPaused as u32));
+    }
+
+    // The read itself stays available while paused — a dashboard can still
+    // explain why every control is disabled.
+    assert_eq!(
+        client.get_compliance_status(&investor),
+        ComplianceStatus::Pending
+    );
+
+    // And the pause is not a lockout: the same edge clears once unpaused.
+    client.unpause(&admin);
+    let after =
+        client.check_compliance_transition(&officer, &investor, &ComplianceStatus::Approved);
+    assert!(after.allowed);
+    assert_eq!(after.reason, TransitionGuard::Allowed);
+}
+
+#[test]
+fn test_guard_reports_not_initialized_instead_of_panicking() {
+    // Before `initialize` there is no admin to check a caller against. The
+    // guard must still answer — a view entrypoint that panics is unusable for
+    // a dashboard rendering a not-yet-configured deployment.
+    let (env, client, admin, _user1, investor) = setup();
+    env.mock_all_auths();
+
+    let check = client.check_compliance_transition(&admin, &investor, &ComplianceStatus::Approved);
+    assert!(!check.allowed);
+    assert_eq!(check.reason, TransitionGuard::NotInitialized);
+    assert_eq!(check.error_code, Some(Error::NotInitialized as u32));
+
+    // The prediction holds: submitting really does fail with that code.
+    let result = client.try_set_compliance_status(&admin, &investor, &ComplianceStatus::Approved);
+    assert_eq!(result, Err(Ok(Error::NotInitialized)));
+}
+
+#[test]
+fn test_guard_report_carries_a_consistent_status_snapshot() {
+    let (_env, client, admin, officer, investor) = setup_guard_world();
+    seed_status(&client, &admin, &investor, ComplianceStatus::Approved);
+
+    let check = client.check_compliance_transition(&officer, &investor, &ComplianceStatus::Revoked);
+    assert_eq!(check.user, investor);
+    assert_eq!(check.caller, officer);
+    assert_eq!(check.current_status, ComplianceStatus::Approved);
+    assert_eq!(check.requested_status, ComplianceStatus::Revoked);
+    assert!(check.allowed);
+    assert_eq!(check.reason, TransitionGuard::Allowed);
+    assert_eq!(check.error_code, None);
+}
+
+#[test]
+fn test_guard_reads_never_mutate_state() {
+    let (env, client, admin, officer, investor) = setup_guard_world();
+    seed_status(&client, &admin, &investor, ComplianceStatus::Approved);
+    let events_before = env.events().all();
+
+    for to in ALL_STATUSES {
+        client.check_compliance_transition(&officer, &investor, &to);
+        client.get_compliance_transition_guard(&officer, &investor, &to);
+    }
+
+    assert_eq!(
+        client.get_compliance_status(&investor),
+        ComplianceStatus::Approved
+    );
+    assert!(client.is_whitelisted(&investor));
+    assert_eq!(client.get_role_of(&officer), Role::ComplianceOfficer);
+    assert!(!client.is_paused());
+    // A pre-flight read is not a compliance action and must leave no trace in
+    // the audit stream.
+    assert_eq!(env.events().all(), events_before);
+}
+
+#[test]
+fn test_guard_verdict_tracks_role_revocation() {
+    let (_env, client, admin, officer, investor) = setup_guard_world();
+
+    let before =
+        client.check_compliance_transition(&officer, &investor, &ComplianceStatus::Approved);
+    assert!(before.allowed);
+
+    client.remove_role(&admin, &officer);
+
+    // Authority is evaluated at call time, never cached, so the verdict flips
+    // immediately — including for an address this officer had approved before.
+    let after =
+        client.check_compliance_transition(&officer, &investor, &ComplianceStatus::Approved);
+    assert!(!after.allowed);
+    assert_eq!(after.reason, TransitionGuard::CallerUnauthorized);
+    assert_guard_matches_execution(&client, &officer, &investor, ComplianceStatus::Approved);
+}
+
+#[test]
+fn test_guard_accepts_emergency_officer_and_rejects_asset_manager() {
+    let (_env, client, admin, _officer, investor) = setup_guard_world();
+    let emergency = Address::generate(&_env);
+    let manager = Address::generate(&_env);
+    client.set_role(&admin, &emergency, &Role::EmergencyOfficer);
+    client.set_role(&admin, &manager, &Role::AssetManager);
+
+    let allowed =
+        client.check_compliance_transition(&emergency, &investor, &ComplianceStatus::Approved);
+    assert!(allowed.allowed);
+
+    let refused =
+        client.check_compliance_transition(&manager, &investor, &ComplianceStatus::Approved);
+    assert!(!refused.allowed);
+    assert_eq!(refused.reason, TransitionGuard::CallerUnauthorized);
+}
+
+#[test]
+fn test_batch_guard_matches_batch_execution_when_every_entry_is_legal() {
+    let (env, client, admin, officer, investor) = setup_guard_world();
+    let second = Address::generate(&env);
+    seed_status(&client, &admin, &investor, ComplianceStatus::Pending);
+
+    let updates = vec![
+        &env,
+        ComplianceBatchUpdate {
+            user: investor.clone(),
+            new_status: ComplianceStatus::Approved,
+        },
+        ComplianceBatchUpdate {
+            user: second.clone(),
+            new_status: ComplianceStatus::Pending,
+        },
+    ];
+
+    let checks = client.check_compliance_batch(&officer, &updates);
+    assert_eq!(checks.len(), 2);
+    for index in 0..checks.len() {
+        assert!(checks.get(index).unwrap().allowed);
+    }
+
+    assert_eq!(client.batch_set_compliance_status(&officer, &updates), 2);
+    assert_eq!(
+        client.get_compliance_status(&investor),
+        ComplianceStatus::Approved
+    );
+    assert_eq!(
+        client.get_compliance_status(&second),
+        ComplianceStatus::Pending
+    );
+}
+
+#[test]
+fn test_batch_guard_flags_the_offending_entry_and_the_batch_fails_atomically() {
+    let (env, client, admin, officer, investor) = setup_guard_world();
+    let blocked = Address::generate(&env);
+    seed_status(&client, &admin, &investor, ComplianceStatus::Pending);
+    seed_status(&client, &admin, &blocked, ComplianceStatus::Blocked);
+
+    let updates = vec![
+        &env,
+        ComplianceBatchUpdate {
+            user: investor.clone(),
+            new_status: ComplianceStatus::Approved,
+        },
+        ComplianceBatchUpdate {
+            user: blocked.clone(),
+            new_status: ComplianceStatus::Approved,
+        },
+    ];
+
+    // The guard pinpoints *which* row is the problem — the batch entrypoint
+    // itself can only report a single error for the whole call.
+    let checks = client.check_compliance_batch(&officer, &updates);
+    assert!(checks.get(0).unwrap().allowed);
+    let offending = checks.get(1).unwrap();
+    assert!(!offending.allowed);
+    assert_eq!(offending.reason, TransitionGuard::BlockedRequiresAdmin);
+
+    // A single rejected row fails the whole batch, and the legal row is not
+    // applied: pre-flight `allowed` on row 0 is a statement about the rule,
+    // not a promise that the row commits.
+    let result = client.try_batch_set_compliance_status(&officer, &updates);
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(
+        client.get_compliance_status(&investor),
+        ComplianceStatus::Pending
+    );
+    assert_eq!(
+        client.get_compliance_status(&blocked),
+        ComplianceStatus::Blocked
+    );
+}
+
+#[test]
+fn test_batch_guard_flags_duplicate_addresses() {
+    let (env, client, _admin, officer, investor) = setup_guard_world();
+
+    let updates = vec![
+        &env,
+        ComplianceBatchUpdate {
+            user: investor.clone(),
+            new_status: ComplianceStatus::Pending,
+        },
+        ComplianceBatchUpdate {
+            user: investor.clone(),
+            new_status: ComplianceStatus::Approved,
+        },
+    ];
+
+    let checks = client.check_compliance_batch(&officer, &updates);
+    // The first occurrence is judged on its own merits; only the repeat is
+    // flagged, so a client can point at the row to remove.
+    assert!(checks.get(0).unwrap().allowed);
+    let duplicate = checks.get(1).unwrap();
+    assert!(!duplicate.allowed);
+    assert_eq!(duplicate.reason, TransitionGuard::DuplicateUserInBatch);
+    assert_eq!(
+        duplicate.error_code,
+        Some(Error::InvalidComplianceTransition as u32)
+    );
+
+    assert_eq!(
+        client.try_batch_set_compliance_status(&officer, &updates),
+        Err(Ok(Error::InvalidComplianceTransition))
+    );
+    assert_eq!(
+        client.get_compliance_status(&investor),
+        ComplianceStatus::Unknown
+    );
+}
+
+#[test]
+fn test_batch_guard_accepts_an_empty_batch() {
+    let (env, client, _admin, officer, _investor) = setup_guard_world();
+    let updates = vec![&env];
+
+    assert_eq!(client.check_compliance_batch(&officer, &updates).len(), 0);
+    assert_eq!(client.batch_set_compliance_status(&officer, &updates), 0);
+}
+
+#[test]
+fn test_guard_agrees_with_the_legacy_whitelist_entrypoints() {
+    // `whitelist_user` / `revoke_whitelist` are tolerant wrappers, but they
+    // share the guard's authority rules. The guard must therefore predict
+    // their *authorization* outcome exactly, even where their no-op tolerance
+    // makes the transition itself a success.
+    for from in ALL_STATUSES {
+        let (env, client, admin, officer, investor) = setup_guard_world();
+        seed_status(&client, &admin, &investor, from);
+
+        let check =
+            client.check_compliance_transition(&officer, &investor, &ComplianceStatus::Approved);
+        let result = client.try_whitelist_user(&officer, &investor);
+
+        if check.reason.is_authorization_failure() {
+            assert_eq!(result, Err(Ok(Error::Unauthorized)), "from {from:?}");
+        } else if from == ComplianceStatus::Approved {
+            // Already approved: the guard calls it a no-op, the legacy wrapper
+            // absorbs it as an idempotent success.
+            assert_eq!(check.reason, TransitionGuard::StatusUnchanged);
+            assert!(result.is_ok());
+        } else {
+            assert!(check.allowed, "from {from:?}");
+            assert!(result.is_ok());
+            assert_eq!(
+                client.get_compliance_status(&investor),
+                ComplianceStatus::Approved
+            );
+        }
+        let _ = &env;
+    }
 }
