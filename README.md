@@ -31,7 +31,9 @@ Run the comprehensive test suite locally:
 Deterministic example outputs for downstream SDK, dashboard, and indexer
 repos live in [`fixtures/sdk/`](fixtures/sdk). They are generated from real
 contract invocations and re-verified on every test run, so contract drift
-fails CI here instead of reaching consumers:
+fails CI here instead of reaching consumers. Event fixtures also assert the
+exported typed payload, exact topic, caller, count, and ordering before their
+JSON/XDR snapshots can be updated:
    ```bash
    make test-fixtures          # verify committed fixtures still match
    make update-fixtures        # regenerate after an intentional change

@@ -265,6 +265,13 @@ diff carefully and commit it alongside your logic change. The CI gate
 (`make test-fixtures`) will fail if the committed fixtures drift from actual
 behaviour.
 
+For event changes, regeneration alone is insufficient. Add or update the
+`typed_events!` expectation in `tests/sdk_fixtures.rs` so the live topic,
+exported payload type, caller fields, count, and ordering are asserted before
+JSON/XDR is written. For reverted calls, assert the exact error and use
+`Harness::assert_no_events`. This prevents update mode from blessing an
+accidental schema or compliance-audit regression.
+
 See [`docs/sdk-fixtures.md`](sdk-fixtures.md) for the format specification.
 
 ### Manual Verification

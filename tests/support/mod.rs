@@ -151,6 +151,36 @@ impl Harness {
         }
         Json::Arr(out)
     }
+
+    /// Asserts the exact typed event sequence, then renders the same live
+    /// events for the committed fixture.
+    ///
+    /// Keeping this assertion in the fixture-generation path matters:
+    /// `UPDATE_FIXTURES=1` must not be able to bless an accidental topic,
+    /// payload, caller, or ordering change merely by rewriting the JSON.
+    pub fn assert_events(
+        &self,
+        expected: soroban_sdk::Vec<(Address, soroban_sdk::Vec<Val>, Val)>,
+    ) -> Json {
+        assert_eq!(
+            self.env.events().all(),
+            expected,
+            "live event sequence does not match the exported typed fixture expectation"
+        );
+        self.events()
+    }
+
+    /// Asserts that the most recent invocation emitted no durable event, then
+    /// renders the empty sequence for a negative-path fixture.
+    pub fn assert_no_events(&self) -> Json {
+        let actual = self.env.events().all();
+        assert_eq!(
+            actual.events().len(),
+            0,
+            "reverted or read-only fixture invocation unexpectedly emitted an event"
+        );
+        self.events()
+    }
 }
 
 // ─── ScVal → fixture JSON ─────────────────────────────────────────────────────
@@ -455,7 +485,8 @@ pub fn update_mode() -> bool {
 }
 
 /// Writes `value` to `fixtures/sdk/<name>` in update mode, or asserts that the
-/// committed file already matches it byte-for-byte.
+/// committed file already matches it byte-for-byte after normalizing checkout
+/// line endings to the canonical `\n` representation.
 ///
 /// This is the mechanism that makes the fixtures *self-verifying*: if contract
 /// behaviour drifts (an event field is renamed, an error code changes, a
@@ -482,7 +513,13 @@ pub fn write_or_verify(name: &str, value: &Json) {
         )
     });
 
-    if existing != rendered {
+    // Git may materialize a text fixture with CRLF on Windows even though the
+    // committed blob and deterministic renderer use LF. Treat that checkout
+    // transformation as equivalent; every JSON token, field order, value, and
+    // XDR byte remains subject to an exact comparison.
+    let existing_canonical = canonical_fixture_text(&existing);
+
+    if existing_canonical != rendered {
         panic!(
             "fixture drift detected in {}\n\
              The contract's observable behaviour no longer matches the committed fixture.\n\
@@ -491,10 +528,14 @@ pub fn write_or_verify(name: &str, value: &Json) {
              \nand review the diff before committing.\n\
              \n--- committed ---\n{}\n--- generated ---\n{}",
             path.display(),
-            truncate(&existing),
+            truncate(&existing_canonical),
             truncate(&rendered)
         );
     }
+}
+
+fn canonical_fixture_text(text: &str) -> String {
+    text.replace("\r\n", "\n")
 }
 
 fn truncate(s: &str) -> String {
@@ -503,6 +544,24 @@ fn truncate(s: &str) -> String {
         s.to_string()
     } else {
         format!("{}\n… ({} more bytes)", &s[..MAX], s.len() - MAX)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::canonical_fixture_text;
+
+    #[test]
+    fn fixture_comparison_normalizes_only_windows_line_endings() {
+        assert_eq!(
+            canonical_fixture_text("{\r\n  \"ok\": true\r\n}\r\n"),
+            "{\n  \"ok\": true\n}\n"
+        );
+        assert_ne!(
+            canonical_fixture_text("{\r\n  \"ok\": false\r\n}\r\n"),
+            "{\n  \"ok\": true\n}\n",
+            "normalization must not hide fixture content drift"
+        );
     }
 }
 
