@@ -108,6 +108,7 @@ value-encoding rules, and the no-real-user-data guarantee.
 
 See [Failing CI Response Guide](docs/failing-ci-guide.md) for detailed causes and fixes per category.
 
+- [Issue Approval Readiness Checklist](docs/issue-approval-readiness-checklist.md) — **mandatory checklist** for contributors and reviewers before considering an issue ready for evaluation
 - [Evaluation Readiness Summary](docs/evaluation-readiness.md) — **central page** summarizing what makes a contribution evaluation-ready: testing standards, CI workflow, PR evidence, acceptance criteria mapping, self-review, and conduct guidance
 - [PR Evidence Checklist](docs/pr-evidence-checklist.md) — **mandatory** evidence checklist for every PR: issue reference, implementation summary, tests, commands run, CI status, and acceptance criteria coverage
 - [Local Verification Command](docs/local-verification.md) — run `make verify` (fmt-check + clippy + test + build) before pushing to avoid failing CI
