@@ -8,6 +8,7 @@ use soroban_sdk::{contractimpl, contracttype, Address, Env, String};
 use crate::admin::{require_not_paused, require_role};
 use crate::compliance;
 use crate::holding;
+use crate::issuer::require_issuance_authority;
 
 use crate::restrictions::{asset_status_reason, error_for_reason, RestrictionReason};
 
@@ -199,6 +200,13 @@ impl AegisContract {
         require_not_paused(&env);
         admin.require_auth();
         require_role(&env, &admin, Role::AssetManager);
+
+        // Separation of duties: the party that decides who may hold the asset
+        // must not also be the party that decides who receives it. Inert
+        // unless an admin has enabled the policy, so existing deployments are
+        // unaffected. See `docs/issuer-role-separation.md`.
+        require_issuance_authority(&env, &admin, Some(&to));
+
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
@@ -316,6 +324,12 @@ impl AegisContract {
         require_not_paused(&env);
         admin.require_auth();
         require_role(&env, &admin, Role::AssetManager);
+
+        // Yield distribution is an issuance action with no single beneficiary,
+        // so only the duty-level control applies (no self- or approver-check
+        // target exists).
+        require_issuance_authority(&env, &admin, None);
+
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }

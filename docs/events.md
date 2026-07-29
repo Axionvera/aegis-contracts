@@ -49,6 +49,7 @@ name, never on struct declaration order or Rust type layout.**
 | `asset_minted`                | `AssetMintedEvent`           | `asset.rs`      | `mint_asset`                                    | `caller: Address`, `to: Address`, `amount: i128`, `total_supply: i128` |
 | `transfer`                    | `TransferEvent`              | `asset.rs`      | `transfer`                                      | `from: Address`, `to: Address`, `amount: i128` |
 | `yield_distributed`           | `YieldDistributedEvent`      | `asset.rs`      | `distribute_yield`                              | `caller: Address`, `amount: i128` |
+| `issuer_separation_policy_updated` | `IssuerSeparationPolicyUpdatedEvent` | `issuer.rs` | `set_issuer_separation_policy`      | `admin: Address`, `previous_policy: IssuerSeparationPolicy`, `new_policy: IssuerSeparationPolicy` |
 
 
 > **Compliance transitions:** the authorisation, blocked (paused), and

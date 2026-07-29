@@ -17,7 +17,7 @@ use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey};
 /// does not know about. Fields are append-only: never remove or repurpose an
 /// existing field or key (same stability contract as `docs/events.md` topics
 /// and `docs/error-codes.md` numeric codes).
-pub const CAPABILITY_SCHEMA_VERSION: u32 = 4;
+pub const CAPABILITY_SCHEMA_VERSION: u32 = 5;
 
 // ─── Response types ───────────────────────────────────────────────────────────
 
@@ -106,6 +106,12 @@ pub struct MintingCapabilities {
     /// On-chain yield settlement. `distribute_yield` exists but only emits
     /// `yield_distributed` for off-chain indexing — it moves no value.
     pub yield_distribution: CapabilityStatus,
+    /// Issuer separation-of-duties controls (`set_issuer_separation_policy`,
+    /// `check_issuance_authority`). See `docs/issuer-role-separation.md`.
+    pub issuer_separation: CapabilityStatus,
+    /// Runtime: whether the separation policy is currently enforced. `false`
+    /// means issuance is governed by the role check alone — the default.
+    pub issuer_separation_enforced: bool,
 }
 
 /// Transfer capabilities (`asset.rs`, `holding.rs`, `eligibility.rs`).
@@ -354,6 +360,8 @@ pub fn get_capabilities(env: &Env) -> ContractCapabilities {
             supply_cap_enforced,
             // Event-only today: no on-chain settlement of yield.
             yield_distribution: CapabilityStatus::Planned,
+            issuer_separation: CapabilityStatus::Supported,
+            issuer_separation_enforced: crate::issuer::get_policy(env).enforced,
         },
 
         transfers: TransferCapabilities {
@@ -472,6 +480,9 @@ pub fn supports_capability(env: &Env, capability: &Symbol) -> CapabilityStatus {
     if *capability == Symbol::new(env, "supply_cap") {
         return caps.minting.supply_cap;
     }
+    if *capability == Symbol::new(env, "issuer_separation") {
+        return caps.minting.issuer_separation;
+    }
     if *capability == Symbol::new(env, "yield_distribution") {
         return caps.minting.yield_distribution;
     }
@@ -565,6 +576,7 @@ pub fn get_capability_keys(env: &Env) -> Vec<Symbol> {
         Symbol::new(env, "burning"),
         Symbol::new(env, "supply_cap"),
         Symbol::new(env, "yield_distribution"),
+        Symbol::new(env, "issuer_separation"),
         Symbol::new(env, "transfers"),
         Symbol::new(env, "holding_cap"),
         Symbol::new(env, "allowances"),

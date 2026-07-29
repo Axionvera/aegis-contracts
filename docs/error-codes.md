@@ -47,6 +47,9 @@ variants can be added to a category without renumbering any other category.
 | 3004 | `ContractPaused`         | Admin/Auth     | The operation is blocked because the contract is paused.             |
 | 3005 | `AlreadyPaused`          | Admin/Auth     | `pause` was called while already paused.                             |
 | 3006 | `NotPaused`              | Admin/Auth     | `unpause` was called while not paused.                                |
+| 3007 | `IssuanceDutyConflict`   | Admin/Auth     | Issuer separation is enforced and the caller holds both the compliance and issuance duties. See [`issuer-role-separation.md`](issuer-role-separation.md). |
+| 3008 | `SelfIssuanceForbidden`  | Admin/Auth     | Issuer separation is enforced and the caller is the recipient of its own issuance. |
+| 3009 | `IssuanceApproverConflict` | Admin/Auth   | Issuer separation is enforced and the caller approved the recipient's compliance. |
 | 4000 | `SenderNotWhitelisted`   | Compliance     | The sending address has no current clearance (`Unknown` or `Revoked`). |
 | 4001 | `ReceiverNotWhitelisted` | Compliance     | The receiving address has no current clearance (`Unknown` or `Revoked`). |
 | 4002 | `SenderBlocked`          | Compliance     | The sending address is `Blocked` — sanctioned or frozen.             |
@@ -91,6 +94,10 @@ has recommended user-facing copy in
      perform this action." (Do not expose role internals to end users.)
    - `3004`–`3006` (pause-related) → "This contract is currently paused for
      maintenance. Please try again later."
+   - `3007`–`3009` (issuer separation) → "This issuance requires a different
+     authorized key." The action is not retryable by the same caller; route
+     the operator to a segregated issuance key rather than inviting a retry.
+     See [`issuer-role-separation.md`](issuer-role-separation.md).
    - `4000`/`4001` → "This address has not completed compliance
      verification." Prompt the user toward the whitelist/KYC flow rather
      than showing a raw error.

@@ -471,6 +471,36 @@
       ]
     },
     {
+      "id": "event-issuer-separation-policy-updated",
+      "description": "Topic `issuer_separation_policy_updated`. Both the previous and the new policy are emitted so an auditor can reconstruct when each separation control came into force without replaying storage (see docs/issuer-role-separation.md).",
+      "events": [
+        {
+          "contract": "CCEOFPHM2IOUTJS53R74QWIEQXXEHLYOTZYMCS44UI735A4WCJZAQNWP",
+          "type": "contract",
+          "topic": "issuer_separation_policy_updated",
+          "topics": [
+            "issuer_separation_policy_updated"
+          ],
+          "data": {
+            "admin": "GDAVU6P2QJK4IWQWUNYUXBAFGTPF36MGBN5HBZGYCVCKO2DONWP7YDIJ",
+            "new_policy": {
+              "allow_dual_duty_issuance": false,
+              "allow_self_issuance": false,
+              "enforced": true,
+              "require_independent_approver": true
+            },
+            "previous_policy": {
+              "allow_dual_duty_issuance": true,
+              "allow_self_issuance": true,
+              "enforced": false,
+              "require_independent_approver": false
+            }
+          },
+          "xdr_base64": "AAAAAAAAAAGI4rzs0h1Jpl3cf8hZBIXuQ68OnnDBS5yiP76DlhJyCAAAAAEAAAAAAAAAAQAAAA4AAAAgaXNzdWVyX3NlcGFyYXRpb25fcG9saWN5X3VwZGF0ZWQAAAARAAAAAQAAAAMAAAAPAAAABWFkbWluAAAAAAAAEgAAAAAAAAAAwVp5+oJVxFoWo3FLhAU03l35hgt6cOTYFUSnaG5tn/wAAAAPAAAACm5ld19wb2xpY3kAAAAAABEAAAABAAAABAAAAA8AAAAYYWxsb3dfZHVhbF9kdXR5X2lzc3VhbmNlAAAAAAAAAAAAAAAPAAAAE2FsbG93X3NlbGZfaXNzdWFuY2UAAAAAAAAAAAAAAAAPAAAACGVuZm9yY2VkAAAAAAAAAAEAAAAPAAAAHHJlcXVpcmVfaW5kZXBlbmRlbnRfYXBwcm92ZXIAAAAAAAAAAQAAAA8AAAAPcHJldmlvdXNfcG9saWN5AAAAABEAAAABAAAABAAAAA8AAAAYYWxsb3dfZHVhbF9kdXR5X2lzc3VhbmNlAAAAAAAAAAEAAAAPAAAAE2FsbG93X3NlbGZfaXNzdWFuY2UAAAAAAAAAAAEAAAAPAAAACGVuZm9yY2VkAAAAAAAAAAAAAAAPAAAAHHJlcXVpcmVfaW5kZXBlbmRlbnRfYXBwcm92ZXIAAAAAAAAAAA=="
+        }
+      ]
+    },
+    {
       "id": "event-none-on-reverted-transfer",
       "description": "Soroban discards all events from a reverted invocation, so a compliance-blocked transfer emits nothing at all. The numeric error code is the only off-chain-observable signal — indexers must watch failed transaction results, not events, to audit blocked transfers (see docs/events.md).",
       "call": "transfer",

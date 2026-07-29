@@ -44,6 +44,7 @@ use aegis_contracts::compliance::{
 use aegis_contracts::compliance_guards::TransitionGuard;
 use aegis_contracts::config::{ConfigAmendedEvent, ConfigProposedEvent, ProtocolConfig};
 use aegis_contracts::holding::{HoldingCapAmendedEvent, HoldingCapProposedEvent};
+use aegis_contracts::issuer::{IssuerSeparationPolicy, IssuerSeparationPolicyUpdatedEvent};
 use aegis_contracts::lifecycle::{AssetStatus, AssetStatusChangedEvent};
 use aegis_contracts::supply_cap::{SupplyCapAmendedEvent, SupplyCapProposedEvent};
 use aegis_contracts::{ContractInitializedEvent, Error, Role};
@@ -151,6 +152,9 @@ fn error_name(e: Error) -> &'static str {
         Error::ContractPaused => "ContractPaused",
         Error::AlreadyPaused => "AlreadyPaused",
         Error::NotPaused => "NotPaused",
+        Error::IssuanceDutyConflict => "IssuanceDutyConflict",
+        Error::SelfIssuanceForbidden => "SelfIssuanceForbidden",
+        Error::IssuanceApproverConflict => "IssuanceApproverConflict",
         Error::SenderNotWhitelisted => "SenderNotWhitelisted",
         Error::ReceiverNotWhitelisted => "ReceiverNotWhitelisted",
         Error::SenderBlocked => "SenderBlocked",
@@ -1501,6 +1505,37 @@ fn fixture_events() {
         );
     }
 
+    // Issuer separation policy governance.
+    {
+        let h = bootstrap();
+        let c = h.client();
+        let policy = IssuerSeparationPolicy {
+            enforced: true,
+            allow_dual_duty_issuance: false,
+            allow_self_issuance: false,
+            require_independent_approver: true,
+        };
+        c.set_issuer_separation_policy(&h.actor("admin"), &policy);
+        push_event(
+            "event-issuer-separation-policy-updated",
+            "Topic `issuer_separation_policy_updated`. Both the previous and the new \
+             policy are emitted so an auditor can reconstruct when each separation \
+             control came into force without replaying storage \
+             (see docs/issuer-role-separation.md).",
+            typed_events!(
+                h,
+                (
+                    "issuer_separation_policy_updated",
+                    IssuerSeparationPolicyUpdatedEvent {
+                        admin: h.actor("admin"),
+                        previous_policy: IssuerSeparationPolicy::default_policy(),
+                        new_policy: policy,
+                    }
+                ),
+            ),
+        );
+    }
+
     // Reverted invocations emit nothing.
     {
         let h = bootstrap();
@@ -1976,6 +2011,33 @@ fn fixture_errors() {
             "The per-investor holding cap was exceeded by a mint or transfer operation.",
             "mint_asset",
             expect_err(r, Error::HoldingCapExceeded),
+        );
+    }
+
+    // 3007 — IssuanceDutyConflict (issuer separation enforced).
+    {
+        let h = bootstrap();
+        let c = h.client();
+        c.set_issuer_separation_policy(
+            &h.actor("admin"),
+            &IssuerSeparationPolicy {
+                enforced: true,
+                allow_dual_duty_issuance: false,
+                allow_self_issuance: false,
+                require_independent_approver: true,
+            },
+        );
+        // The admin carries both the compliance and the issuance duty, so with
+        // separation enforced it may no longer issue: issuance must go through
+        // a dedicated AssetManager key. See docs/issuer-role-separation.md.
+        let r = c.try_mint_asset(&h.actor("admin"), &h.actor("investor_alice"), &100);
+        push_err(
+            "error-3007-issuance-duty-conflict",
+            "Issuer separation is enforced and the caller holds both the compliance and \
+             issuance duties, so it may not issue. Recoverable: the admin can relax the \
+             policy, which is never self-locking.",
+            "mint_asset",
+            expect_err(r, Error::IssuanceDutyConflict),
         );
     }
 
