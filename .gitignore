@@ -1,5 +1,6 @@
 .idea/
 /target/
+/test_snapshots/
 .env*
 .DS_Store
 **/*.rs.bk

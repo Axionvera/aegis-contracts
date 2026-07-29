@@ -1,30 +1,37 @@
 # Contract API Specification
 
-* `initialize(env, admin)`: Sets the initial admin. Reverts if already initialized.
-* `whitelist_user(env, admin, user)`: Adds `user` to the persistent compliance map. Requires admin auth.
-* `mint_asset(env, admin, to, amount)`: Mints `amount` to `to`. Requires admin auth. Reverts if `to` is not whitelisted.
-* `transfer(env, from, to, amount)`: Moves `amount` between addresses. Requires `from` auth. Reverts if either `from` or `to` is not whitelisted, or if `from` has an insufficient balance.
-* `distribute_yield(env, admin, amount)`: Triggers a dividend yield event for off-chain indexing. Requires admin auth.
+The canonical, normative contract reference is the
+[Public API and Compatibility Policy](public-api.md). It documents:
 
-## Emitted Events
+- every public function, ordered input, output, authorization rule, failure, and
+  state effect;
+- the exact event topic/data wire formats;
+- storage and upgrade implications;
+- stable, experimental, and internal surfaces;
+- SDK/dashboard expectations; and
+- breaking-change, versioning, deprecation, and review requirements.
 
-Every state mutation publishes a contract event so off-chain systems can index
-protocol activity in real time. All events are namespaced with `aegis` as
-topic 0, so a single Soroban RPC topic filter captures the whole protocol,
-while topic 1 (the action) narrows to one event type. Addresses are indexed as
-topics so the RPC can filter by counterparty. Topic counts stay within the
-Soroban limit of four.
+## Quick index
 
-| Event | Topics | Data |
-| --- | --- | --- |
-| `Init` | `("aegis", "init")` | `admin: Address` |
-| `WhitelistAdd` | `("aegis", "wl_add", user)` | `admin: Address` |
-| `Mint` | `("aegis", "mint", to)` | `[amount, new_balance, total_supply]` |
-| `Transfer` | `("aegis", "transfer", from, to)` | `amount: i128` |
-| `YieldDistributed` | `("aegis", "yield")` | `[admin, amount, total_supply]` |
+### Stable functions
 
-Events are declared with `#[contractevent]` in `src/events.rs`, which generates
-the topic/data encoding and includes the schema in the contract spec.
+- [`initialize(admin: Address) -> ()`](public-api.md#initialize)
+- [`whitelist_user(admin: Address, user: Address) -> ()`](public-api.md#whitelist_user)
+- [`mint_asset(admin: Address, to: Address, amount: i128) -> ()`](public-api.md#mint_asset)
+- [`transfer(from: Address, to: Address, amount: i128) -> ()`](public-api.md#transfer)
 
-The off-chain consumer for these events lives in `monitoring/`.
+### Experimental functions
 
+- [`distribute_yield(admin: Address, amount: i128) -> ()`](public-api.md#distribute_yield)
+
+### Events
+
+- Stable: [`Init`](public-api.md#init),
+  [`WhitelistAdd`](public-api.md#whitelistadd),
+  [`Mint`](public-api.md#mint), and
+  [`Transfer`](public-api.md#transfer-1)
+- Experimental: [`YieldDistributed`](public-api.md#yielddistributed)
+
+The embedded contract spec in a released WASM is the machine-readable source
+for generated bindings. Do not infer the external ABI from Rust-only helpers or
+raw storage keys.

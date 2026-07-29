@@ -5,6 +5,19 @@ Core smart contract infrastructure for the Aegis RWA Protocol. Built on the Stel
 ## Overview
 Aegis enables the fractional tokenization of Real-World Assets (RWAs). The contracts strictly enforce regulatory compliance at the ledger level, ensuring tokens can only be minted to and transferred between KYC-whitelisted addresses.
 
+## Public API and compatibility
+
+Contract, SDK, dashboard, and indexer integrations must use the
+[Public API and Compatibility Policy](docs/public-api.md) as the normative
+behavioral reference. It documents every public function and event, ordered
+inputs and outputs, authorization and failures, storage implications, stability
+levels, versioning, and breaking-change review requirements.
+
+The shorter [contract specification index](docs/contract-spec.md) links into the
+same canonical reference. Generate language bindings from the exact released
+WASM's embedded contract spec and pin integrations to a contract release and
+deployment.
+
 ## Prerequisites
 * [Rust](https://rustup.rs/) (>= 1.71)
 * [Soroban CLI](https://soroban.stellar.org/docs/getting-started/setup)
