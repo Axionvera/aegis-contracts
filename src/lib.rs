@@ -4,6 +4,7 @@ pub mod admin;
 pub mod asset;
 pub mod capabilities;
 pub mod compliance;
+pub mod compliance_guards;
 pub mod config;
 pub mod eligibility;
 pub mod errors;
@@ -13,11 +14,11 @@ pub mod restrictions;
 
 pub mod lifecycle;
 
+#[cfg(test)]
+mod config_test;
 pub mod supply_cap;
 #[cfg(test)]
 mod test;
-#[cfg(test)]
-mod config_test;
 
 use soroban_sdk::{contract, contractimpl, contracttype, Address, Env};
 

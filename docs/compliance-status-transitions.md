@@ -1,5 +1,13 @@
 # Compliance status transitions
 
+> This document describes the **legacy two-transition model**
+> (`whitelist_user` / `revoke_whitelist`) and its invariant tests. The current
+> five-state model is specified in
+> [`compliance-lifecycle.md`](compliance-lifecycle.md), and the guards that
+> gate every status change — with the typed refusal reasons and the pre-flight
+> reads that share them — in
+> [`compliance-transition-guards.md`](compliance-transition-guards.md).
+
 This document defines the compliance status state machine for investor
 addresses — the **approved**, **revoked**, **blocked**, **pending**, and
 **unknown** statuses — the transitions that are valid under authorised and

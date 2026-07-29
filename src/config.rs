@@ -1,15 +1,18 @@
 #![allow(deprecated)]
 
-use soroban_sdk::{contractimpl, contracttype, Env, Address};
-use crate::{admin::{get_admin, require_not_paused}, AegisContract, AegisContractClient, AegisContractArgs, DataKey, Error};
+use crate::{
+    admin::{get_admin, require_not_paused},
+    AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error,
+};
+use soroban_sdk::{contractimpl, contracttype, Address, Env};
 
 #[contracttype]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ProtocolConfig {
-    /// The minimum token amount allowed in a single transfer. 
+    /// The minimum token amount allowed in a single transfer.
     /// 0 means no minimum is enforced.
     pub min_transfer_amount: i128,
-    
+
     /// The maximum number of operations allowed in a single batch.
     /// Useful for enforcing gas/compute limits in batched compliance or transfer functions.
     pub max_batch_size: u32,
@@ -43,7 +46,9 @@ pub fn get_config(env: &Env) -> ProtocolConfig {
 
 /// Returns the currently pending proposed configuration, if any.
 pub fn get_pending_config(env: &Env) -> Option<ProtocolConfig> {
-    env.storage().instance().get(&DataKey::ProtocolConfigCandidate)
+    env.storage()
+        .instance()
+        .get(&DataKey::ProtocolConfigCandidate)
 }
 
 #[contractimpl]
@@ -97,11 +102,14 @@ impl AegisContract {
             return Err(Error::Unauthorized);
         }
 
-        let pending_config: ProtocolConfig =
-            match env.storage().instance().get(&DataKey::ProtocolConfigCandidate) {
-                Some(config) => config,
-                None => return Err(Error::NoPendingAdminTransfer), // Reusing error, ideally would add NoPendingConfig
-            };
+        let pending_config: ProtocolConfig = match env
+            .storage()
+            .instance()
+            .get(&DataKey::ProtocolConfigCandidate)
+        {
+            Some(config) => config,
+            None => return Err(Error::NoPendingAdminTransfer), // Reusing error, ideally would add NoPendingConfig
+        };
 
         // Clear the candidate
         env.storage()
@@ -134,7 +142,11 @@ impl AegisContract {
             return Err(Error::Unauthorized);
         }
 
-        if !env.storage().instance().has(&DataKey::ProtocolConfigCandidate) {
+        if !env
+            .storage()
+            .instance()
+            .has(&DataKey::ProtocolConfigCandidate)
+        {
             return Err(Error::NoPendingAdminTransfer); // Using existing error
         }
 

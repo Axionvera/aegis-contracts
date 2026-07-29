@@ -56,6 +56,8 @@ value-encoding rules, and the no-real-user-data guarantee.
 - [Compliance Status Transitions](docs/compliance-status-transitions.md) — the approved/revoked/blocked/pending/unknown state machine, its transition matrix under authorised and unauthorised callers, and the invariant transition tests that guard it (audit readiness)
 
 
+- [Compliance Status Transition Guards](docs/compliance-transition-guards.md) — the ordered guard chain every status change must clear, the typed refusal reasons (`BlockedRequiresAdmin`, `TransitionForbidden`, …), the pre-flight reads (`check_compliance_transition` / `check_compliance_batch`) that share one evaluation with enforcement, and the documented security assumptions
+
 - [Compliance Batch Updates](docs/compliance-batch-updates.md) - atomic multi-address lifecycle updates, edge cases, event ordering, and SDK/dashboard guidance
 
 ## Errors

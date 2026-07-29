@@ -324,3 +324,12 @@ Lifecycle tests live in [`src/test.rs`](../src/test.rs):
   `test_check_transfer_eligibility_tracks_lifecycle_changes`,
   `test_capabilities_advertise_the_compliance_lifecycle`,
   `test_lifecycle_reads_never_revert_and_never_mutate`
+
+## Pre-flight guards
+
+Every precondition above — the pause, the caller's authority, the no-op rule,
+and the matrix itself — is evaluated by one shared guard chain that clients can
+read *before* submitting a transaction, and that the write path enforces. See
+[`compliance-transition-guards.md`](compliance-transition-guards.md) for the
+guard order, the typed refusal reasons, and the
+`check_compliance_transition` / `check_compliance_batch` entrypoints.

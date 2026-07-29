@@ -126,6 +126,7 @@ pub struct ContractCapabilities {
 | `investor_tiers` | status | `Unsupported` | Jurisdiction/accreditation tiers. |
 | `lifecycle_states` | status | `Supported` | Five-state compliance lifecycle + `get_compliance_status`. See [`compliance-lifecycle.md`](compliance-lifecycle.md). |
 | `lifecycle_transitions` | status | `Supported` | Enforced transition matrix on `set_compliance_status`, plus the pre-flight transition reads. |
+| `transition_guards` | status | `Supported` | Pre-flight transition guards (`check_compliance_transition`, `get_compliance_transition_guard`, `check_compliance_batch`) returning a typed refusal reason. See [`compliance-transition-guards.md`](compliance-transition-guards.md). |
 | `eligibility_reads` | status | `Supported` | `get_investor_eligibility`, `check_transfer_eligibility`. |
 | `enforced_on_mint` | `bool` | `true` | Every mint checks the receiver's lifecycle status. |
 | `enforced_on_transfer` | `bool` | `true` | Every transfer checks both parties' lifecycle statuses. |
@@ -215,6 +216,7 @@ Registry (also returned by `get_capability_keys()`):
 | `investor_tiers` | `compliance.investor_tiers` |
 | `compliance_lifecycle` | `compliance.lifecycle_states` |
 | `compliance_transitions` | `compliance.lifecycle_transitions` |
+| `compliance_transition_guards` | `compliance.transition_guards` |
 | `eligibility_reads` | `compliance.eligibility_reads` |
 | `minting` | `minting.minting` |
 | `burning` | `minting.burning` |
@@ -247,13 +249,10 @@ within a schema version.
 ## Versioning
 
 `capability_version` is the schema version of the response
-
-(`CAPABILITY_SCHEMA_VERSION`, currently `2`); `contract_version` is the
-
-(`CAPABILITY_SCHEMA_VERSION`, currently `2` — bumped when the compliance
-lifecycle fields and keys were added); `contract_version` is the
-
-deployed crate's semantic version.
+(`CAPABILITY_SCHEMA_VERSION`, currently `4` — last bumped when
+`compliance.transition_guards` and the `compliance_transition_guards`
+registry key were added); `contract_version` is the deployed crate's
+semantic version.
 
 Bump `capability_version` whenever a field is **added** to any capability
 struct or a key is added to the registry, so an SDK pinned to an older schema

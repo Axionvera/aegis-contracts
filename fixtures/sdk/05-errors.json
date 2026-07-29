@@ -249,30 +249,30 @@
       }
     },
     {
-      "id": "error-7000-asset-not-active",
-      "description": "The asset lifecycle status is Draft (not Active), so issuance and transfers are blocked.",
+      "id": "error-7002-asset-blocked-restriction-draft",
+      "description": "The asset lifecycle status is Draft (not Active), so issuance and transfers are blocked. Reported as the granular restriction code `7002`, not the reserved `6000 AssetNotActive` it superseded (see docs/error-codes.md).",
       "call": "mint_asset",
       "result": {
         "ok": false,
         "error": {
           "type": "contract",
-          "code": 7000,
-          "name": "AssetNotActive",
-          "category": "unknown"
+          "code": 7002,
+          "name": "AssetBlockedRestriction",
+          "category": "transfer_restrictions"
         }
       }
     },
     {
-      "id": "error-7001-asset-lifecycle-paused",
+      "id": "error-7000-asset-paused-restriction",
       "description": "The asset lifecycle status is Paused, so issuance and transfers are blocked. Distinct from the global contract pause (3004).",
       "call": "mint_asset",
       "result": {
         "ok": false,
         "error": {
           "type": "contract",
-          "code": 7001,
-          "name": "AssetLifecyclePaused",
-          "category": "unknown"
+          "code": 7000,
+          "name": "AssetPausedRestriction",
+          "category": "transfer_restrictions"
         }
       }
     },
@@ -284,9 +284,9 @@
         "ok": false,
         "error": {
           "type": "contract",
-          "code": 7004,
+          "code": 6004,
           "name": "InvalidLifecycleTransition",
-          "category": "unknown"
+          "category": "asset_metadata"
         }
       }
     },
@@ -298,7 +298,7 @@
         "ok": false,
         "error": {
           "type": "contract",
-          "code": 6002,
+          "code": 6006,
           "name": "AssetMetadataUpdateBlocked",
           "category": "asset_metadata"
         }
