@@ -4415,3 +4415,121 @@ fn test_compliance_transitions_rejected_after_officer_role_revoked() {
         .revoke_whitelist(&fixture.admin, &fixture.target);
     assert!(!fixture.is_target_approved());
 }
+
+// ─── Compliant minting invariants (#8) ─────────────────────────────────────
+//
+// A deterministic scenario matrix proving mint_asset only succeeds for a
+// compliant recipient, an authorised issuer, and a movable (Active) asset —
+// and that every rejected attempt, including a repeated one, leaves balance
+// and total supply exactly as they were before the call.
+
+#[test]
+fn test_compliant_mint_succeeds_and_updates_balance_and_supply() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
+
+    let r = client.try_mint_asset(&user1, &user2, &250);
+    assert!(r.is_ok());
+    assert_eq!(client.get_balance_of(&user2), 250);
+    assert_eq!(client.get_total_supply(), 250);
+}
+
+#[test]
+fn test_mint_rejects_non_whitelisted_recipient_and_leaves_state_unchanged() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    // user2 is never whitelisted — default compliance status is Unknown.
+
+    let r = client.try_mint_asset(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::ReceiverNotWhitelisted)));
+    assert_eq!(client.get_balance_of(&user2), 0);
+    assert_eq!(client.get_total_supply(), 0);
+}
+
+#[test]
+fn test_mint_rejects_unauthorised_issuer_and_leaves_state_unchanged() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
+    // user1 is never granted AssetManager (or Admin) — an unauthorised issuer.
+
+    let r = client.try_mint_asset(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::Unauthorized)));
+    assert_eq!(client.get_balance_of(&user2), 0);
+    assert_eq!(client.get_total_supply(), 0);
+}
+
+#[test]
+fn test_mint_rejects_invalid_asset_state_and_leaves_state_unchanged() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
+    // Asset status is left at its default (Draft) — never activated, so it
+    // is not yet a valid mint target.
+
+    let r = client.try_mint_asset(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::AssetBlockedRestriction)));
+    assert_eq!(client.get_balance_of(&user2), 0);
+    assert_eq!(client.get_total_supply(), 0);
+
+    // Also invalid once the asset is explicitly retired — a terminal state.
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    client.set_asset_status(&admin, &AssetStatus::Retired);
+    let r = client.try_mint_asset(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::AssetRetiredRestriction)));
+    assert_eq!(client.get_balance_of(&user2), 0);
+    assert_eq!(client.get_total_supply(), 0);
+}
+
+#[test]
+fn test_mint_rejects_revoked_compliance_and_leaves_state_unchanged() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+
+    // user2 was compliant once, then had their approval revoked.
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Revoked);
+
+    let r = client.try_mint_asset(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::ReceiverNotWhitelisted)));
+    assert_eq!(client.get_balance_of(&user2), 0);
+    assert_eq!(client.get_total_supply(), 0);
+}
+
+#[test]
+fn test_repeated_rejected_mint_attempts_never_mutate_state() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    // user2 stays non-compliant for every attempt below.
+
+    for _ in 0..5 {
+        let r = client.try_mint_asset(&user1, &user2, &100);
+        assert_eq!(r, Err(Ok(Error::ReceiverNotWhitelisted)));
+        assert_eq!(client.get_balance_of(&user2), 0);
+        assert_eq!(client.get_total_supply(), 0);
+    }
+
+    // The repeated rejections left the recipient just as mintable as before
+    // — no latent state (e.g. a partially-consumed cap) survived the retries.
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
+    client.mint_asset(&user1, &user2, &100);
+    assert_eq!(client.get_balance_of(&user2), 100);
+    assert_eq!(client.get_total_supply(), 100);
+}
