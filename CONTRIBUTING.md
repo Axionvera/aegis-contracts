@@ -4,6 +4,16 @@ We welcome open-source contributions to make the Aegis Protocol more robust!
 
 > **Start here:** Before contributing, read the [Evaluation-Readiness Index Page](docs/evaluation-readiness.md) — one central page covering what makes a contribution evaluation-ready: testing standards, CI workflow, PR evidence, acceptance criteria mapping, self-review, communication policy, and conduct guidance.
 
+## Conduct & Payment Policy
+If you are contributing during a paid period (e.g., a GrantFox campaign), you must strictly adhere to the [Payment-Period Conduct Note](docs/payment-period-conduct.md). 
+
+**Key expectations:**
+- **No Spam:** Repeated complaints or harassment in community channels regarding payment are unacceptable and will not be tolerated.
+- **Mandatory Self-Review:** Before raising any concerns about your reward, you must rigorously self-review your PR against the acceptance criteria, tests, and CI requirements.
+- **GrantFox Evaluation:** Remember that issue tags are not guarantees of payment. Final approval follows the GrantFox evaluation process (Maintainer review -> Program approval -> Payout) against campaign budgets and per-contributor caps.
+
+Violations of this communication policy may result in suspension from campaigns or permanent disqualification.
+
 ## Development Workflow
 1. **Fork & Clone:** Fork the repo and clone it locally.
 2. **Setup:** Run `rustup target add wasm32v1-none` and `cp .env.example .env`. See the [Local Deployment Guide](docs/local-deployment.md) for the full environment setup, including running a local Stellar network.
