@@ -43,5 +43,23 @@ make monitor          # stream from a configured network
 See [`monitoring/README.md`](monitoring/README.md) for configuration and API
 details.
 
+## Releasing
+Contract changes are gated by a repeatable release checklist covering tests,
+storage and event compatibility, errors, roles, compliance enforcement, SDK and
+dashboard compatibility, and security/audit sign-off.
+
+**→ [`docs/release-checklist.md`](docs/release-checklist.md)**
+
+The mechanical parts are automated:
+
+```bash
+make compat-check    # storage, event, dashboard & spec drift detection
+make verify          # compat-check + fmt + clippy + tests + WASM build
+make release-check   # verify + WASM hash + manual sections to sign off
+```
+
+`make compat-check` fails the build if the contract's storage layout or event
+surface drifts from what the monitoring service and dashboard expect.
+
 ## Contributing
 Please see CONTRIBUTING.md for guidelines on how to submit pull requests, branch naming conventions, and testing requirements.

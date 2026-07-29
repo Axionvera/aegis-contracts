@@ -37,6 +37,42 @@ dump-events:
 
 test-all: test monitor-test
 
+# Automated portion of docs/release-checklist.md: storage, event, dashboard and
+# spec-documentation compatibility between the contract and its consumers.
+compat-check:
+	@bash ./scripts/check-release-compat.sh
+
+# Full pre-PR gate: compatibility, formatting, lints, contract tests, WASM
+# build, and the off-chain monitoring test suite.
+verify: compat-check
+	cargo fmt --all --check
+	cargo clippy --all-targets -- -D warnings
+	cargo test
+	$(MAKE) build
+	cd monitoring && npm test
+
+# Release gate. Runs everything in `verify`, then prints the manual checklist
+# sections that still require human sign-off.
+release-check: verify
+	@echo ""
+	@echo "==================================================================="
+	@echo " Automated release checks PASSED."
+	@echo ""
+	@echo " Now complete the manual sections of docs/release-checklist.md:"
+	@echo "   2. Storage & state compatibility (TTL/archival, migrations)"
+	@echo "   4. Errors and panics"
+	@echo "   5. Roles and access control (see standing risks R1-R3)"
+	@echo "   6. Compliance enforcement"
+	@echo "   7. SDK and client compatibility"
+	@echo "   9. Security and audit"
+	@echo ""
+	@echo " WASM sha256:"
+	@sha256sum $(WASM) 2>/dev/null || echo "   (run 'make build' first)"
+	@echo ""
+	@echo " Then copy the Sign-Off Record from docs/release-checklist.md"
+	@echo " into the release PR or tag notes."
+	@echo "==================================================================="
+
 fmt:
 	cargo fmt --all
 
@@ -47,4 +83,4 @@ clean:
 optimize: build
 	stellar contract optimize --wasm $(WASM)
 
-.PHONY: default build test monitor-install monitor-test monitor monitor-demo dump-events test-all fmt clean optimize
+.PHONY: default build test verify compat-check release-check monitor-install monitor-test monitor monitor-demo dump-events test-all fmt clean optimize
