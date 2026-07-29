@@ -19,16 +19,16 @@ test:
 
 # Off-chain monitoring service (real-time event streaming).
 monitor-install:
-	cd monitoring && npm install
+	cd .github/monitoring && npm install
 
 monitor-test:
-	cd monitoring && npm test
+	cd .github/monitoring && npm test
 
 monitor:
-	cd monitoring && npm start
+	cd .github/monitoring && npm start
 
 monitor-demo:
-	cd monitoring && npm run dev
+	cd .github/monitoring && npm run dev
 
 # Regenerate the on-chain XDR fixtures consumed by monitoring's
 # tests/onchain-compat.test.js.
@@ -42,7 +42,7 @@ fmt:
 
 clean:
 	cargo clean
-	rm -rf monitoring/node_modules monitoring/data
+	rm -rf .github/monitoring/node_modules .github/monitoring/data
 
 optimize: build
 	stellar contract optimize --wasm $(WASM)

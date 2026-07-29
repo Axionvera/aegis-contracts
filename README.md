@@ -30,9 +30,10 @@ Run the comprehensive test suite locally:
 
 ## Real-Time Monitoring
 Every state change emits a namespaced contract event (see
-`docs/contract-spec.md`). The `monitoring/` service consumes them over Soroban
-RPC and provides live streaming, filtering and routing, pattern-based alerting,
-event persistence and replay, an analytics dashboard, and event-based triggers.
+`docs/contract-spec.md`). The `.github/monitoring/` service consumes them over
+Soroban RPC and provides live streaming, filtering and routing, pattern-based
+alerting, event persistence and replay, an analytics dashboard, and
+event-based triggers.
 
 ```bash
 make monitor-install
@@ -40,8 +41,21 @@ make monitor-demo     # self-contained demo → http://127.0.0.1:4500
 make monitor          # stream from a configured network
 ```
 
-See [`monitoring/README.md`](monitoring/README.md) for configuration and API
-details.
+See [`.github/monitoring/README.md`](.github/monitoring/README.md) for
+configuration and API details.
+
+## Security & Auditing
+Security reviewers start here: [`docs/audit-evidence-index.md`](docs/audit-evidence-index.md)
+is the single index over all audit evidence — compliance enforcement, admin
+roles, minting, transfers, asset metadata, storage layout, event schemas,
+error catalogue, pause/migration status, and test coverage — with an honest
+register of known gaps. Supporting material:
+
+* [`docs/threat-model.md`](docs/threat-model.md) — assets, actors, threats, mitigations, residual risk
+* [`docs/architecture.md`](docs/architecture.md) — module separation and storage tiers
+* [`docs/contract-spec.md`](docs/contract-spec.md) — public API and emitted-event schema
+
+Please report vulnerabilities privately before public disclosure.
 
 ## Contributing
 Please see CONTRIBUTING.md for guidelines on how to submit pull requests, branch naming conventions, and testing requirements.
