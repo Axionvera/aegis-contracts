@@ -246,6 +246,14 @@ enumerate the registry rather than hardcode it — and detect at runtime that a
 deployment is older or newer than the keys it knows about. Order is stable
 within a schema version.
 
+### `check_interface_compatibility(client_schema_version, required_capabilities) -> InterfaceCompatibilityReport`
+
+Checks a client's required capability keys against this deployment in one
+call and reports the schema-version relationship, so an SDK or dashboard can
+answer "can I safely integrate with this deployment?" without hand-rolling
+the comparison. See [`docs/interface-compatibility.md`](interface-compatibility.md)
+for the full field reference and usage guidance.
+
 ## Versioning
 
 `capability_version` is the schema version of the response
