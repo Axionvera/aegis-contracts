@@ -86,6 +86,7 @@ value-encoding rules, and the no-real-user-data guarantee.
 - [Contributor Self-Review Form](docs/contributor-self-review-form.md) — **mandatory self-review** covering requirements, implementation, tests, CI, documentation, and known limitations
 - [Local Deployment Guide](docs/local-deployment.md) — deployment assumptions, environment variables, Makefile reference, Soroban CLI usage, and common errors
 - [Reviewer Checklist](docs/reviewer-checklist.md) — standardized quality and security checklist for PR reviewers
+- [Reviewer Evidence Checklist](docs/reviewer-evidence-checklist.md) — maintainer-side evidence checklist for scope, implementation quality, tests, CI, docs, acceptance criteria, and evaluation risk
 - [Contributor Experience Review](docs/contributor-experience-review.md) — known onboarding friction and follow-up items
 
 ## CI & Contributing
