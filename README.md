@@ -43,5 +43,8 @@ make monitor          # stream from a configured network
 See [`monitoring/README.md`](monitoring/README.md) for configuration and API
 details.
 
+## Advanced Development
+For detailed instructions on local development, testing structure, XDR fixtures, and common setup errors, see the [Advanced Development & Testing Guide](docs/advanced-development-guide.md).
+
 ## Contributing
 Please see CONTRIBUTING.md for guidelines on how to submit pull requests, branch naming conventions, and testing requirements.
