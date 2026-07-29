@@ -9,7 +9,7 @@ This document describes the role-based access control (RBAC) system for the Aegi
 | `Admin` | Supreme authority. Can perform all operations and manage roles. | All operations + role management + admin transfer |
 | `ComplianceOfficer` | Manages the compliance whitelist and lifecycle. | `whitelist_user`, `revoke_whitelist`, `set_compliance_status`, `batch_set_compliance_status` |
 | `AssetManager` | Manages asset minting and yield distribution. | `mint_asset`, `distribute_yield` |
-| `EmergencyOfficer` | Combined compliance + asset privileges for operational flexibility. | `whitelist_user`, `revoke_whitelist`, `set_compliance_status`, `batch_set_compliance_status`, `mint_asset`, `distribute_yield` |
+| `EmergencyOfficer` | Compliance privileges plus the emergency pause. **Not** an issuer: `mint_asset` and `distribute_yield` call `require_role(AssetManager)`, which admits only an `AssetManager` or the admin. | `whitelist_user`, `revoke_whitelist`, `set_compliance_status`, `batch_set_compliance_status`, `pause` |
 | `None` | No role assigned. Cannot perform any privileged operation. | None (except `transfer` which requires self-auth) |
 
 ### Admin Bypass
@@ -78,6 +78,7 @@ All role changes emit Soroban events for off-chain indexing and audit trails:
 | Admin renounced | `("admin_renounced",)` | `{ previous_admin, new_admin }` |
 | Contract paused | `("contract_paused",)` | `{ admin }` |
 | Contract unpaused | `("contract_unpaused",)` | `{ admin }` |
+| Issuer separation policy updated | `("issuer_separation_policy_updated",)` | `{ admin, previous_policy, new_policy }` |
 
 See [`events.md`](events.md) for the full event schema reference and
 SDK/dashboard compatibility notes.
@@ -120,6 +121,7 @@ If the candidate does not accept, the transfer can be superseded by a new `trans
 | `revoke_whitelist` | `ComplianceOfficer` | Yes |
 | `set_compliance_status` | `ComplianceOfficer`* | Yes |
 | `batch_set_compliance_status` | `ComplianceOfficer`* | Yes |
+| `set_issuer_separation_policy` | `Admin` | N/A (admin-only) |
 | `set_role` | `Admin` | N/A (admin-only) |
 | `remove_role` | `Admin` | N/A (admin-only) |
 | `transfer` | Self-auth | N/A |
@@ -129,6 +131,23 @@ If the candidate does not accept, the transfer can be superseded by a new `trans
 `*` Moving an address out of `Blocked` is admin-only, including inside
 `batch_set_compliance_status`.
 
+## Separation of Duties
+
+Roles say *which privileges* an address holds; duties say *which classes of
+decision* it can make. Only the admin currently carries both the compliance and
+the issuance duty, which means one key can clear an investor and then fund
+them. [`issuer-role-separation.md`](issuer-role-separation.md) specifies the
+duty map, the opt-in policy that forbids that combination (plus self-issuance
+and same-approver issuance), the `check_issuance_authority` pre-flight read,
+and the assumptions the controls rest on.
+
+| Role | Compliance | Issuance | Emergency | Governance |
+| --- | :---: | :---: | :---: | :---: |
+| `ComplianceOfficer` | ✓ | | | |
+| `AssetManager` | | ✓ | | |
+| `EmergencyOfficer` | ✓ | | ✓ | |
+| `Admin` | ✓ | ✓ | ✓ | ✓ |
+
 ## Storage Layout
 
 | Key | Storage Type | Description |
@@ -136,6 +155,8 @@ If the candidate does not accept, the transfer can be superseded by a new `trans
 | `DataKey::Admin` | Instance | The supreme admin address |
 | `DataKey::AdminCandidate` | Instance | Pending admin during 2-step transfer |
 | `DataKey::Role(Address)` | Persistent | The role assigned to an address |
+| `DataKey::IssuerSeparationPolicy` | Instance | Issuer separation-of-duties policy (absent = permissive default) |
+| `DataKey::ComplianceApprover(Address)` | Persistent | Address that last approved an investor's compliance |
 | `DataKey::Whitelist(Address)` | Persistent | Whitelist flag (legacy, kept for compatibility) |
 | `DataKey::Balance(Address)` | Persistent | Token balance |
 | `DataKey::TotalSupply` | Instance | Global total supply |

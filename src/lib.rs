@@ -9,6 +9,7 @@ pub mod config;
 pub mod eligibility;
 pub mod errors;
 pub mod holding;
+pub mod issuer;
 
 pub mod restrictions;
 
@@ -99,6 +100,13 @@ pub enum DataKey {
     AssetSymbol,
     /// Optional metadata URI for off-chain asset details.
     AssetMetadataUri,
+    /// The address that last moved an investor into `ComplianceStatus::Approved`.
+    /// Read by the issuer separation controls to enforce four-eyes issuance;
+    /// see `docs/issuer-role-separation.md`.
+    ComplianceApprover(Address),
+    /// The deployment's issuer separation-of-duties policy. Absent means the
+    /// permissive default (separation not enforced).
+    IssuerSeparationPolicy,
     /// The globally active protocol configuration.
     ProtocolConfig,
     /// The pending (proposed) protocol configuration.

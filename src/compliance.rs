@@ -29,6 +29,7 @@ use soroban_sdk::{contractimpl, contracttype, vec, Address, Env, Vec};
 
 use crate::admin::require_not_paused;
 use crate::compliance_guards::{require_transition, require_transition_authority};
+use crate::issuer::record_compliance_approver;
 use crate::{AegisContract, AegisContractArgs, AegisContractClient, DataKey, Error};
 
 // ─── Lifecycle state ──────────────────────────────────────────────────────────
@@ -225,6 +226,14 @@ fn apply_transition(
     new_status: ComplianceStatus,
 ) {
     write_status(env, user, &new_status);
+
+    // Record who granted the clearance, so the issuer separation controls can
+    // enforce that the approver is not also the issuer. Written only on the
+    // way *into* `Approved`: a later revocation must not erase who granted the
+    // clearance being revoked. See `docs/issuer-role-separation.md`.
+    if new_status.is_approved() {
+        record_compliance_approver(env, user, caller);
+    }
 
     env.events().publish(
         ("compliance_status_changed",),

@@ -331,6 +331,20 @@
           "category": "minting_transfers"
         }
       }
+    },
+    {
+      "id": "error-3007-issuance-duty-conflict",
+      "description": "Issuer separation is enforced and the caller holds both the compliance and issuance duties, so it may not issue. Recoverable: the admin can relax the policy, which is never self-locking.",
+      "call": "mint_asset",
+      "result": {
+        "ok": false,
+        "error": {
+          "type": "contract",
+          "code": 3007,
+          "name": "IssuanceDutyConflict",
+          "category": "admin_authorization"
+        }
+      }
     }
   ]
 }

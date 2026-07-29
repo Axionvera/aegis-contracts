@@ -141,6 +141,8 @@ pub struct ContractCapabilities {
 | `supply_cap` | status | `Supported` | Global cap with 2-step governance. |
 | `supply_cap_enforced` | `bool` **(runtime)** | `false` | A cap is currently active (`> 0`). |
 | `yield_distribution` | status | `Planned` | `distribute_yield` emits an event only; it settles no value on-chain. |
+| `issuer_separation` | status | `Supported` | Issuer separation-of-duties controls. See [`issuer-role-separation.md`](issuer-role-separation.md). |
+| `issuer_separation_enforced` | `bool` | `false` | **Runtime**: whether the separation policy is currently enforced. |
 
 #### `transfers`
 
@@ -222,6 +224,7 @@ Registry (also returned by `get_capability_keys()`):
 | `burning` | `minting.burning` |
 | `supply_cap` | `minting.supply_cap` |
 | `yield_distribution` | `minting.yield_distribution` |
+| `issuer_separation` | `minting.issuer_separation` |
 | `transfers` | `transfers.transfers` |
 | `holding_cap` | `transfers.holding_cap` |
 | `allowances` | `transfers.allowances` |
@@ -257,10 +260,9 @@ for the full field reference and usage guidance.
 ## Versioning
 
 `capability_version` is the schema version of the response
-(`CAPABILITY_SCHEMA_VERSION`, currently `4` — last bumped when
-`compliance.transition_guards` and the `compliance_transition_guards`
-registry key were added); `contract_version` is the deployed crate's
-semantic version.
+(`CAPABILITY_SCHEMA_VERSION`, currently `5` — last bumped when the
+`minting.issuer_separation` fields and the `issuer_separation` registry key
+were added); `contract_version` is the deployed crate's semantic version.
 
 Bump `capability_version` whenever a field is **added** to any capability
 struct or a key is added to the registry, so an SDK pinned to an older schema

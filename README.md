@@ -47,6 +47,8 @@ value-encoding rules, and the no-real-user-data guarantee.
 - [RWA Protocol Threat Model](docs/threat-model.md) — protected assets, trust boundaries, threat catalog (compliance bypass, admin/role misuse, minting and transfer risks, pause misuse, event reliability), and explicit off-chain/legal out-of-scope items
 - [Emergency Pause Policy](docs/emergency-pause.md) — global pause mechanism, authorization, and trust model
 - [Admin Roles & Permissions](docs/admin-roles.md) — role-based access control (RBAC) design
+- [Issuer Role Separation](docs/issuer-role-separation.md) — separation-of-duties controls for issuance: the duty map per role, the opt-in policy (dual-duty, self-issuance, independent-approver), the `check_issuance_authority` pre-flight read, and what the controls do and do not defend against
+
 - [Admin Misuse Risks](docs/admin-misuse-risks.md) — threat model and mitigations
 - [Supply Cap Amendment Governance](docs/supply-cap-governance.md) — 2-step cap amendment workflow and enforcement
 - [Protocol Configuration Governance](docs/protocol-configuration.md) — global configuration module (`ProtocolConfig`) 2-step governance workflow and RWA guardrails
