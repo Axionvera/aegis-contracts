@@ -43,5 +43,8 @@ make monitor          # stream from a configured network
 See [`monitoring/README.md`](monitoring/README.md) for configuration and API
 details.
 
+## Audit Readiness
+An explicit [Audit Readiness Review](docs/audit-readiness.md) is available, detailing high-risk security blockers, unresolved design decisions, missing test coverage, SDK/dashboard compatibility risks, and explicit legal/technical limitations prior to formal third-party audits.
+
 ## Contributing
 Please see CONTRIBUTING.md for guidelines on how to submit pull requests, branch naming conventions, and testing requirements.
