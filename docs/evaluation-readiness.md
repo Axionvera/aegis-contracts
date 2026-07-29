@@ -1,4 +1,4 @@
-# Evaluation Readiness Summary
+# Evaluation-Readiness Index Page
 
 **One central page for contributors to check before payment day.**
 
@@ -187,7 +187,35 @@ If you're contributing during a paid period (e.g., GrantFox campaign):
 
 ---
 
-## 8. Additional Resources
+## 8. Communication Policy
+
+Clear and respectful communication keeps the evaluation process fair and efficient.
+
+### Where to discuss
+
+- **Issue comments** — for discussion about a specific issue's requirements, acceptance criteria, or scope
+- **PR reviews** — for code-level feedback, questions, and change requests
+- **Ecosystem discussion** — for large architectural changes or cross-cutting concerns (see [CONTRIBUTING.md Discussion](../CONTRIBUTING.md#discussion))
+
+### Communication expectations
+
+| Principle | Guideline |
+| :--- | :--- |
+| **Be concise** | Provide relevant context (issue/PR links, error output) in your first message |
+| **Be patient** | Maintainers review across multiple contributors; allow 48–72h for responses |
+| **Stay on topic** | Keep issue/PR threads focused on the technical scope; use the right channel for other topics |
+| **No pings** | Avoid @-mentioning maintainers unless the thread is stale (>5 days without response) |
+| **Be professional** | Follow [Contributor Covenant](https://www.contributor-covenant.org/) standards; aggressive or entitled language may result in a blocked contribution |
+
+### Payment questions
+
+Payment-related questions must follow the [Payment-Period Conduct Guidance](#7-payment-period-conduct-guidance). Do not ask about payment timelines in issue or PR threads — evaluation queues are handled separately by the GrantFox program.
+
+📖 **Related:** [Payment-Period Conduct Note](./payment-period-conduct.md)
+
+---
+
+## 9. Additional Resources
 
 ### Core documentation:
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — development workflow, branching, testing requirements
@@ -218,6 +246,6 @@ An evaluation-ready contribution is one where:
 2. ✅ **Behavior is meaningful** — implements actual protocol rules with security
 3. ✅ **Evidence is complete** — traceability table, clear PR description, all checklists filled
 4. ✅ **Self-review passed** — you would merge this yourself
-5. ✅ **Conduct is professional** — respectful communication, no spamming
+5. ✅ **Conduct is professional** — respectful communication, no spamming (see [Communication Policy](#8-communication-policy))
 
 **Use this page as your pre-submission checklist.** It gives you one clear place to verify your work is ready for evaluation and payment consideration.
