@@ -89,13 +89,13 @@ Every PR must include a completion table in its description mapping each accepta
 
 ### Completion Table format:
 
-| Acceptance Criterion | Status | Implementation Evidence | Test Evidence |
-| :--- | :---: | :--- | :--- |
-| **AC 1**: Brief description | Complete | `fn name()` — link or description | `test_name` — file:line |
-| **AC 2**: ... | Partial | Reason and what was done | Tests that exist |
-| **AC 3**: ... | Not Met | Explanation | N/A |
+| Acceptance Criterion | Status | Implementation Evidence | Test Evidence | Documentation Impact |
+| :--- | :---: | :--- | :--- | :--- |
+| **AC 1**: Brief description | Complete | `fn name()` — link or description | `test_name` — file:line | `docs/page.md` updated |
+| **AC 2**: ... | Partial | Reason and what was done | Tests that exist | Follow-up docs needed |
+| **AC 3**: ... | Not Met | Explanation | N/A | N/A — no behavior changed |
 
-**Status** must be one of: **Complete** (fully satisfied), **Partial** (known gaps with explanation), or **Not Met** (not addressed with rationale).
+**Status** must be one of: **Complete** (fully satisfied), **Partial** (known gaps with explanation), or **Not Met** (not addressed with rationale). The Documentation Impact column must name each affected document or use an explicit `N/A` with a short reason.
 
 ### Detailed Traceability Table (for complex PRs):
 
