@@ -2,6 +2,8 @@
 
 We welcome open-source contributions to make the Aegis Protocol more robust!
 
+> **Start here:** Before contributing, read the [Evaluation-Readiness Index Page](docs/evaluation-readiness.md) — one central page covering what makes a contribution evaluation-ready: testing standards, CI workflow, PR evidence, acceptance criteria mapping, self-review, communication policy, and conduct guidance.
+
 ## Development Workflow
 1. **Fork & Clone:** Fork the repo and clone it locally.
 2. **Setup:** Run `rustup target add wasm32v1-none` and `cp .env.example .env`. See the [Local Deployment Guide](docs/local-deployment.md) for the full environment setup, including running a local Stellar network.
