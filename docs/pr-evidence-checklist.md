@@ -42,7 +42,8 @@ acceptance criterion, test outcome, command run, and CI result.
 - [ ] Every acceptance criterion from the issue is addressed.
 - [ ] The [Completion Table](./traceability-mapping.md#completion-table-format)
       in the PR description maps each criterion to its status
-      (Complete/Partial/Not Met), implementation evidence, and test evidence.
+      (Complete/Partial/Not Met), implementation evidence, test evidence, and
+      documentation impact (or an explicit `N/A` with a reason).
 - [ ] Incomplete criteria include a rationale and, where applicable, a link to
       a follow-up issue.
 
@@ -76,7 +77,7 @@ Maintainers should verify each item:
 | Tests | Tests exist, pass, and cover the change |
 | Commands Run | The output shows no errors or warnings |
 | CI Status | The CI badge or screenshot shows green |
-| Acceptance Criteria | Every criterion in the issue is mapped in the Completion Table |
+| Acceptance Criteria | Every criterion in the issue is mapped to status, implementation, tests, and documentation impact in the Completion Table |
 
 If any item is missing or insufficient, request clarification before proceeding
 with a full code review.

@@ -2,17 +2,20 @@
 
 To ensure high-quality engineering and evaluation readiness, all contract changes must be mapped to their respective acceptance criteria. This documentation defines the standard traceability table format required for all Pull Requests (PRs).
 
+The Completion Table is the canonical acceptance criteria audit template used
+for every PR.
+
 ## Completion Table Format
 
 Every PR must include a completion table in its description mapping each acceptance criterion to its status and evidence. This table helps contributors self-evaluate before payment day and makes review expectations clear.
 
 ### Table Structure
 
-| Acceptance Criterion | Status | Implementation Evidence | Test Evidence |
-| :--- | :---: | :--- | :--- |
-| **AC 1**: Brief description | Complete | `fn name()` — link to line or brief description | `test_name` — file:line |
-| **AC 2**: ... | Partial | Reason and what was done | Tests that exist |
-| **AC 3**: ... | Not Met | Explanation | N/A |
+| Acceptance Criterion | Status | Implementation Evidence | Test Evidence | Documentation Impact |
+| :--- | :---: | :--- | :--- | :--- |
+| **AC 1**: Brief description | Complete | `fn name()` — link to line or brief description | `test_name` — file:line | `docs/page.md` updated |
+| **AC 2**: ... | Partial | Reason and what was done | Tests that exist | Follow-up docs needed |
+| **AC 3**: ... | Not Met | Explanation | N/A | N/A — no behavior changed |
 
 ### Status Definitions
 
@@ -22,14 +25,24 @@ Every PR must include a completion table in its description mapping each accepta
 | **Partial** | The criterion is partially addressed but has known gaps (must explain why in the evidence column). |
 | **Not Met** | The criterion is not addressed in this PR (must explain why in the evidence column). |
 
+### Documentation Impact Evidence
+
+For every criterion, use the **Documentation Impact** column to identify the
+README, contributor guide, API reference, specification, or other document
+that changed. Write `N/A` with a short reason when the criterion has no
+documentation impact. Do not leave the column blank: an explicit `N/A` tells
+reviewers that documentation impact was assessed rather than overlooked.
+
 ### Handling Incomplete Criteria
 
 If any acceptance criterion is marked **Partial** or **Not Met**:
 
 1. **Explain why** in the Implementation Evidence column (e.g., "scope limited — criterion deferred to follow-up PR", "blocked by upstream dependency", "out of scope for this issue").
 2. **Link to a follow-up issue** if the criterion is intentionally deferred.
-3. **Do not request payment evaluation** for incomplete criteria — payment is assessed against full acceptance criteria coverage.
-4. Reviewers may reject a PR with incomplete criteria unless a clear, accepted rationale is provided and the incomplete items are explicitly scoped out.
+3. **Record documentation impact** for the work that is complete and note any
+   deferred documentation in the Documentation Impact column.
+4. **Do not request payment evaluation** for incomplete criteria — payment is assessed against full acceptance criteria coverage.
+5. Reviewers may reject a PR with incomplete criteria unless a clear, accepted rationale is provided and the incomplete items are explicitly scoped out.
 
 > If you cannot mark all criteria Complete, be honest about it. Incomplete criteria with clear explanations and follow-up plans are accepted more readily than claims of completeness that don't hold up under review.
 
