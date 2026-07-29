@@ -1585,11 +1585,11 @@ fn test_contract_capabilities() {
 
     // 3. Read-only / no state changes
     // Calling capability endpoints must publish no events and not modify balances or storage
-    let events_len = env.events().all().len();
+    let events_len = env.events().all().events().len();
     let _ = client.get_capabilities();
     let _ = client.supports_capability(&Symbol::new(&env, "whitelist"));
     let _ = client.get_capability_keys();
-    assert_eq!(env.events().all().len(), events_len);
+    assert_eq!(env.events().all().events().len(), events_len);
 
     // 4. Backward compatibility: unknown capability returns Unsupported
     assert_eq!(
