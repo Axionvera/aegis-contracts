@@ -3333,13 +3333,12 @@ fn test_holding_cap_proposed_and_amended_emit_events() {
     );
 }
 
-    // ─── Compliance lifecycle state machine (#compliance-lifecycle) ──────────────
-    //
-    // These tests lock down the five-state investor compliance lifecycle: the
-    // default state, every allowed transition, every rejected transition, the
-    // authorization asymmetry around `Blocked`, the events emitted on change, and
-    // the fact that minting and transfers actually consume the lifecycle state.
-}
+// ─── Compliance lifecycle state machine (#compliance-lifecycle) ──────────────
+//
+// These tests lock down the five-state investor compliance lifecycle: the
+// default state, every allowed transition, every rejected transition, the
+// authorization asymmetry around `Blocked`, the events emitted on change, and
+// the fact that minting and transfers actually consume the lifecycle state.
 
 /// Every lifecycle state, in ABI order.
 const ALL_STATUSES: [ComplianceStatus; 5] = [
@@ -4412,5 +4411,4 @@ fn test_compliance_transitions_rejected_after_officer_role_revoked() {
         .client
         .revoke_whitelist(&fixture.admin, &fixture.target);
     assert!(!fixture.is_target_approved());
-}
 }
