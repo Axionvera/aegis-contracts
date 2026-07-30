@@ -49,6 +49,7 @@ pub const RESTRICTION_SCHEMA_VERSION: u32 = 1;
 /// response as "the first blocking reason", not "the only one".
 #[contracttype]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
 pub enum RestrictionReason {
     /// No restriction applies — the movement passes every check as of the
     /// current ledger state. This is the only non-blocking variant.
@@ -330,8 +331,10 @@ impl AegisContract {
     /// Lets a client build its reason ⇄ code table from the deployment itself
     /// rather than hardcoding the mapping, so an SDK pinned to an older
     /// version cannot silently mis-label a code.
-    pub fn get_restriction_code(_env: Env, reason: RestrictionReason) -> u32 {
-        code_for_reason(&reason)
+    pub fn get_restriction_code(env: Env, reason: RestrictionReason) -> u32 {
+        let code = code_for_reason(&reason);
+        soroban_sdk::log!(&env, "get_restriction_code CALLED. reason: {:?}, code: {}", reason, code);
+        code
     }
 
     /// Returns the schema version of the restriction reason enumeration.

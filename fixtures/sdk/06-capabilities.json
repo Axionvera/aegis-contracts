@@ -21,9 +21,7 @@
         "get_holding_cap": "0",
         "get_pending_holding_cap": null,
         "is_paused": false,
-        "get_asset_status": [
-          "Draft"
-        ],
+        "get_asset_status": 0,
         "get_asset_metadata": {
           "name": "",
           "symbol": "",
@@ -46,9 +44,7 @@
         "get_supply_cap": "1000000",
         "get_holding_cap": "600000",
         "is_paused": false,
-        "get_asset_status": [
-          "Active"
-        ],
+        "get_asset_status": 1,
         "get_asset_metadata": {
           "name": "Aegis Sample Tower",
           "symbol": "AST",
@@ -60,9 +56,7 @@
         },
         "eligibility": {
           "investor_alice": {
-            "asset_status": [
-              "Active"
-            ],
+            "asset_status": 1,
             "balance": "200000",
             "can_receive": true,
             "can_send": true,
@@ -75,9 +69,7 @@
             "whitelisted": true
           },
           "investor_bob": {
-            "asset_status": [
-              "Active"
-            ],
+            "asset_status": 1,
             "balance": "150000",
             "can_receive": true,
             "can_send": true,
@@ -102,9 +94,7 @@
         "get_balance_of": "1000",
         "is_whitelisted": true,
         "get_investor_eligibility": {
-          "asset_status": [
-            "Active"
-          ],
+          "asset_status": 1,
           "balance": "1000",
           "can_receive": false,
           "can_send": false,
@@ -126,27 +116,19 @@
       "values": [
         {
           "status": "Active (default)",
-          "get_asset_status": [
-            "Active"
-          ]
+          "get_asset_status": 1
         },
         {
           "status": "Paused",
-          "get_asset_status": [
-            "Paused"
-          ]
+          "get_asset_status": 2
         },
         {
           "status": "Blocked",
-          "get_asset_status": [
-            "Blocked"
-          ]
+          "get_asset_status": 4
         },
         {
           "status": "Retired (terminal)",
-          "get_asset_status": [
-            "Retired"
-          ]
+          "get_asset_status": 3
         }
       ]
     }

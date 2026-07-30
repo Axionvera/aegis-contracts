@@ -1943,6 +1943,20 @@ fn fixture_errors() {
         );
     }
 
+    // 7001 — AssetRetiredRestriction.
+    {
+        let h = bootstrap();
+        let c = h.client();
+        c.set_asset_status(&h.actor("admin"), &AssetStatus::Retired);
+        let r = c.try_mint_asset(&h.actor("asset_manager"), &h.actor("investor_alice"), &100);
+        push_err(
+            "error-7001-asset-retired-restriction",
+            "The asset lifecycle status is Retired, so issuance and transfers are blocked.",
+            "mint_asset",
+            expect_err(r, Error::AssetRetiredRestriction),
+        );
+    }
+
     // 7004 — InvalidLifecycleTransition.
     {
         let h = bootstrap();
@@ -2065,6 +2079,8 @@ fn fixture_errors() {
         Error::ReceiverNotWhitelisted,
         Error::InvalidAmount,
         Error::InsufficientBalance,
+        Error::AssetPausedRestriction,
+        Error::AssetRetiredRestriction,
         Error::AssetBlockedRestriction,
         Error::InvalidLifecycleTransition,
         Error::AssetMetadataUpdateBlocked,

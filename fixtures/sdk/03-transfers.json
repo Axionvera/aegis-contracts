@@ -87,9 +87,7 @@
         "investor_alice"
       ],
       "returns": {
-        "asset_status": [
-          "Active"
-        ],
+        "asset_status": 1,
         "balance": "1000",
         "can_receive": true,
         "can_send": true,
@@ -110,9 +108,7 @@
         "outsider_dave"
       ],
       "returns": {
-        "asset_status": [
-          "Active"
-        ],
+        "asset_status": 1,
         "balance": "0",
         "can_receive": false,
         "can_send": false,
@@ -134,9 +130,7 @@
         "investor_alice"
       ],
       "returns": {
-        "asset_status": [
-          "Active"
-        ],
+        "asset_status": 1,
         "balance": "600",
         "can_receive": true,
         "can_send": true,

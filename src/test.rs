@@ -98,6 +98,10 @@ fn test_mint_reverts_without_asset_manager_role() {
     // user1 has no role at all — mint should revert
     let result = client.try_mint_asset(&user1, &user2, &100);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert_eq!(client.get_total_supply(), 0);
+    assert_eq!(client.get_balance_of(&user2), 0);
 }
 
 #[test]
@@ -112,6 +116,10 @@ fn test_mint_reverts_with_compliance_officer_role() {
     // ComplianceOfficer cannot mint — only AssetManager or Admin
     let result = client.try_mint_asset(&user1, &user2, &100);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert_eq!(client.get_total_supply(), 0);
+    assert_eq!(client.get_balance_of(&user2), 0);
 }
 
 #[test]
@@ -292,6 +300,9 @@ fn test_whitelist_reverts_without_role() {
     // user2 has no role — whitelist should revert
     let result = client.try_whitelist_user(&user2, &user1);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert!(!client.is_whitelisted(&user1));
 }
 
 #[test]
@@ -305,6 +316,9 @@ fn test_whitelist_reverts_with_asset_manager_role() {
     // AssetManager cannot whitelist — only ComplianceOfficer or Admin
     let result = client.try_whitelist_user(&user2, &user1);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert!(!client.is_whitelisted(&user1));
 }
 
 #[test]
@@ -355,6 +369,9 @@ fn test_revoke_whitelist_reverts_without_role() {
     // user2 has no role
     let result = client.try_revoke_whitelist(&user2, &user1);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert!(client.is_whitelisted(&user1));
 }
 
 #[test]
@@ -382,6 +399,9 @@ fn test_set_role_reverts_for_non_admin() {
     // user1 is not admin — cannot assign roles
     let result = client.try_set_role(&user1, &user2, &Role::AssetManager);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert_eq!(client.get_role_of(&user2), Role::None);
 }
 
 #[test]
@@ -390,11 +410,14 @@ fn test_remove_role_reverts_for_non_admin() {
     env.mock_all_auths();
 
     client.initialize(&admin);
-    client.set_role(&admin, &user2, &Role::AssetManager);
+    client.set_role(&admin, &user1, &Role::AssetManager);
 
-    // user1 is not admin — cannot revoke roles
-    let result = client.try_remove_role(&user1, &user2);
+    // user2 is not admin — cannot revoke roles
+    let result = client.try_remove_role(&user2, &user1);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert_eq!(client.get_role_of(&user1), Role::AssetManager);
 }
 
 #[test]
@@ -456,6 +479,9 @@ fn test_transfer_admin_reverts_for_non_admin() {
 
     let result = client.try_transfer_admin(&user1, &user2);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert_eq!(client.get_role_of(&admin), Role::Admin);
 }
 
 #[test]
@@ -469,6 +495,11 @@ fn test_accept_admin_reverts_for_wrong_candidate() {
     // user2 tries to accept — should revert
     let result = client.try_accept_admin(&user2);
     assert_eq!(result, Err(Ok(Error::NotPendingCandidate)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert_eq!(client.get_role_of(&admin), Role::Admin);
+    assert_eq!(client.get_role_of(&user1), Role::None);
+    assert_eq!(client.get_role_of(&user2), Role::None);
 }
 
 #[test]
@@ -512,6 +543,9 @@ fn test_renounce_admin_reverts_for_non_admin() {
 
     let result = client.try_renounce_admin(&user1);
     assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    
+    // Ensure state is preserved on wrong-role failure
+    assert_eq!(client.get_role_of(&admin), Role::Admin);
 }
 
 #[test]
@@ -1876,6 +1910,7 @@ fn test_holding_cap_blocks_mint_over_limit() {
     assert!(r.is_ok());
     assert_eq!(client.get_balance_of(&user2), 500);
 
+
     // Mint that would push the holder over the cap is rejected.
     let r = client.try_mint_asset(&user1, &user2, &1);
     assert!(r.is_err());
@@ -1891,6 +1926,7 @@ fn test_holding_cap_blocks_transfer_over_limit() {
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.whitelist_user(&admin, &user1);
     client.whitelist_user(&admin, &user2);
+
 
     // Give user1 a balance, then cap user2's holding at 300.
     client.mint_asset(&user1, &user1, &1000);
@@ -3147,11 +3183,11 @@ fn test_compliance_transition_events_have_exact_shape() {
             (
                 fixture.client.address.clone(),
                 ("compliance_status_changed",).into_val(&fixture.env),
-                crate::compliance::ComplianceStatusChangedEvent {
+                ComplianceStatusChangedEvent {
                     caller: fixture.officer.clone(),
                     user: fixture.target.clone(),
-                    previous_status: crate::compliance::ComplianceStatus::Unknown,
-                    new_status: crate::compliance::ComplianceStatus::Approved,
+                    previous_status: ComplianceStatus::Unknown,
+                    new_status: ComplianceStatus::Approved,
                 }
                 .into_val(&fixture.env),
             ),
@@ -3179,11 +3215,11 @@ fn test_compliance_transition_events_have_exact_shape() {
             (
                 fixture.client.address.clone(),
                 ("compliance_status_changed",).into_val(&fixture.env),
-                crate::compliance::ComplianceStatusChangedEvent {
+                ComplianceStatusChangedEvent {
                     caller: fixture.emergency.clone(),
                     user: fixture.target.clone(),
-                    previous_status: crate::compliance::ComplianceStatus::Approved,
-                    new_status: crate::compliance::ComplianceStatus::Revoked,
+                    previous_status: ComplianceStatus::Approved,
+                    new_status: ComplianceStatus::Revoked,
                 }
                 .into_val(&fixture.env),
             ),

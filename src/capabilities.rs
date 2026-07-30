@@ -28,7 +28,8 @@ pub const CAPABILITY_SCHEMA_VERSION: u32 = 5;
 /// to decide between hiding a control permanently and rendering a
 /// "coming soon" affordance, so every behaviour flag is a tri-state.
 #[contracttype]
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[repr(u32)]
 pub enum CapabilityStatus {
     /// Not available in this contract version, and not a tracked gap —
     /// either deliberately out of scope or impossible under the protocol's
