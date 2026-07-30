@@ -2,6 +2,18 @@
 
 We welcome open-source contributions to make the Aegis Protocol more robust!
 
+> **Start here:** Before contributing, read the [Evaluation-Readiness Index Page](docs/evaluation-readiness.md) — one central page covering what makes a contribution evaluation-ready: testing standards, CI workflow, PR evidence, acceptance criteria mapping, self-review, communication policy, and conduct guidance.
+
+## Conduct & Payment Policy
+If you are contributing during a paid period (e.g., a GrantFox campaign), you must strictly adhere to the [Payment-Period Conduct Note](docs/payment-period-conduct.md). 
+
+**Key expectations:**
+- **No Spam:** Repeated complaints or harassment in community channels regarding payment are unacceptable and will not be tolerated.
+- **Mandatory Self-Review:** Before raising any concerns about your reward, you must rigorously self-review your PR against the acceptance criteria, tests, and CI requirements.
+- **GrantFox Evaluation:** Remember that issue tags are not guarantees of payment. Final approval follows the GrantFox evaluation process (Maintainer review -> Program approval -> Payout) against campaign budgets and per-contributor caps.
+
+Violations of this communication policy may result in suspension from campaigns or permanent disqualification.
+
 ## Development Workflow
 1. **Fork & Clone:** Fork the repo and clone it locally.
 2. **Setup:** Run `rustup target add wasm32v1-none` and `cp .env.example .env`. See the [Local Deployment Guide](docs/local-deployment.md) for the full environment setup, including running a local Stellar network.
@@ -10,7 +22,7 @@ We welcome open-source contributions to make the Aegis Protocol more robust!
 5. **Formatting:** Ensure `cargo fmt` and `cargo clippy` pass before opening a PR. `make ci` runs the complete gate (`fmt-check` + `clippy` + `test` + `build`) in one command.
 6. **PR Evidence Checklist:** Before requesting review, complete the [PR Evidence Checklist](docs/pr-evidence-checklist.md) in your PR description. This covers issue reference, implementation summary, tests, commands run, CI status, and acceptance criteria coverage — making review more objective.
 7. **Self-Review:** Before requesting review, fill out the [Contributor Self-Review Form](docs/contributor-self-review-form.md) and include it in your PR. This covers requirements, implementation completeness, testing evidence, CI status, documentation updates, and known limitations.
-8. **Completion Table:** You MUST include a [Completion Table](docs/traceability-mapping.md#completion-table-format) in your PR description, mapping every acceptance criterion to its status (Complete/Partial/Not Met), implementation evidence, and test evidence. For complex PRs, also include the [Detailed Traceability Mapping Table](docs/traceability-mapping.md#detailed-traceability-table-format-advanced).
+8. **Completion Table:** You MUST include a [Completion Table](docs/traceability-mapping.md#completion-table-format) in your PR description, mapping every acceptance criterion to its status (Complete/Partial/Not Met), implementation evidence, test evidence, and documentation impact (or an explicit `N/A` with a reason). For complex PRs, also include the [Detailed Traceability Mapping Table](docs/traceability-mapping.md#detailed-traceability-table-format-advanced).
 
 ## Discussion
 Join our ecosystem discussion before undertaking large architectural changes. Find the `// TODO:` comments in the source code for good places to start contributing.

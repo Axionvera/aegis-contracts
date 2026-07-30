@@ -176,5 +176,6 @@ or circumventing evaluation — will be addressed proportionally:
 - [Evaluation Readiness Summary](./evaluation-readiness.md) — central checklist for contributors before evaluation day
 - [PR Evidence Checklist](./pr-evidence-checklist.md) — mandatory evidence checklist for every PR
 - [Meaningful Implementation Checklist](./meaningful-implementation-checklist.md) — what counts as real contract work
+- [Meaningful Change Threshold Guide](./meaningful-change-threshold.md) — why line count alone is not the standard, and how reviewers assess scope
 - [Aegis Contracts Contribution Examples](./aegis-contracts-examples.md) — side-by-side comparisons of acceptable vs unacceptable contributions
 - [CONTRIBUTING.md](../CONTRIBUTING.md) — development workflow and branching conventions

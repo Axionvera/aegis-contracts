@@ -6,14 +6,15 @@
 
 ## Completion Table
 
-<!-- REQUIRED: Map every acceptance criterion from the issue using the table below.
+<!-- REQUIRED: Complete this canonical acceptance criteria audit template by
+     mapping every criterion from the issue using the table below.
      See docs/traceability-mapping.md#completion-table-format for details.
      Status: Complete / Partial / Not Met -->
 
-| Acceptance Criterion | Status | Implementation Evidence | Test Evidence |
-| :--- | :---: | :--- | :--- |
-| **AC 1**: | Complete / Partial / Not Met | | |
-| **AC 2**: | Complete / Partial / Not Met | | |
+| Acceptance Criterion | Status | Implementation Evidence | Test Evidence | Documentation Impact |
+| :--- | :---: | :--- | :--- | :--- |
+| **AC 1**: | Complete / Partial / Not Met | | | Updated file(s), or N/A with reason |
+| **AC 2**: | Complete / Partial / Not Met | | | Updated file(s), or N/A with reason |
 
 > **Incomplete criteria must include a reason and follow-up plan.** See Handling Incomplete Criteria in docs/traceability-mapping.md.
 
@@ -69,8 +70,17 @@ for detailed guidance.
 ### 6. Acceptance Criteria Coverage
 - [ ] Every acceptance criterion from the issue is addressed in the Completion
       Table above.
+- [ ] Documentation impact is recorded for every criterion, including an
+      explicit `N/A` with a reason when no documentation changes are needed.
 - [ ] Incomplete criteria include a rationale and, where applicable, a link to
       a follow-up issue.
+
+### 7. Storage Compatibility (required for storage-changing PRs)
+- [ ] I completed the [storage-change reviewer checklist](../docs/storage-audit-map.md#mandatory-reviewer-checklist).
+- [ ] I documented the compatibility classification and migration plan, and
+      added tests that start from the previous stored layout.
+- [ ] **OR** this PR does not change persisted keys, value models, defaults, or
+      storage classes (explain in Additional Context).
 
 ### Policy & Standards
 - [ ] I have read the [Contributor Evaluation Policy](../docs/contributor-evaluation-policy.md) and understand that **merge does not guarantee payment**.

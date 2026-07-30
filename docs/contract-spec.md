@@ -76,6 +76,14 @@ Pure reads; never mutate state, require no authorization, and remain available b
 * `cancel_holding_cap_proposal(env, admin)`: Discards a pending proposal. Only admin; blocked when paused.
 * Enforcement (`enforce_holding_cap`): `mint_asset` and `transfer` call this before crediting the receiver. Reverts with `HoldingCapExceeded` (`5003`) when `balance + incoming > cap`. A cap of `0` means no restriction.
 
+## Protocol Configuration (config.rs)
+
+* `get_protocol_config(env)`: Returns the active global `ProtocolConfig`.
+* `get_pending_protocol_config(env)`: Returns the pending proposed `ProtocolConfig` (`None` if none).
+* `propose_config(env, admin, proposed_config)`: Initiates a 2-step configuration amendment (`config_proposed` event). Only admin; blocked when paused. Rejects malformed configurations (e.g., negative limits).
+* `accept_config(env, admin)`: Activates the pending configuration (`config_amended` event). Only admin; blocked when paused.
+* `cancel_config_proposal(env, admin)`: Discards a pending proposal. Only admin; blocked when paused.
+
 ## Read Functions
 
 These functions are always available, even when the contract is paused:
@@ -107,6 +115,7 @@ key registry, and versioning rules.
 * `get_capabilities(env)`: Returns a `ContractCapabilities` struct describing compliance, minting, transfer, pause, metadata, and event support, plus `capability_version` / `contract_version`. Each behaviour is a `CapabilityStatus` — `Supported`, `Planned`, or `Unsupported` — alongside runtime switches (`paused`, `operations_enabled`, `supply_cap_enforced`, `holding_cap_enforced`, `metadata_configured`, `initialized`).
 * `supports_capability(env, capability)`: Returns the `CapabilityStatus` for a single capability key. Unknown keys return `Unsupported` instead of reverting, so newer clients fail safe against older deployments.
 * `get_capability_keys(env)`: Returns every capability key understood by this contract version.
+* `check_interface_compatibility(env, client_schema_version, required_capabilities)`: Returns an `InterfaceCompatibilityReport` — whether every key in `required_capabilities` resolves to `Supported`, plus how `client_schema_version` relates to this deployment's schema version. See [`docs/interface-compatibility.md`](interface-compatibility.md).
 
 > A capability indicates the protocol *implements* a behaviour — not that the
 > caller is authorized to perform it, nor that it will succeed against current

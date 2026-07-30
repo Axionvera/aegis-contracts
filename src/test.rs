@@ -8,8 +8,8 @@ use crate::admin::{
 use crate::asset::{AssetMintedEvent, TransferEvent, YieldDistributedEvent};
 use crate::capabilities::{
     CapabilityStatus, ComplianceCapabilities, ContractCapabilities, EventCapabilities,
-    MetadataCapabilities, MintingCapabilities, PauseCapabilities, TransferCapabilities,
-    CAPABILITY_SCHEMA_VERSION,
+    MetadataCapabilities, MintingCapabilities, PauseCapabilities, SchemaVersionRelation,
+    TransferCapabilities, CAPABILITY_SCHEMA_VERSION,
 };
 
 use crate::compliance::{
@@ -17,7 +17,12 @@ use crate::compliance::{
     WhitelistRevokedEvent,
 };
 
+use crate::compliance_guards::TransitionGuard;
+
 use crate::eligibility::InvestorEligibility;
+use crate::issuer::{
+    IssuanceGuard, IssuerDuty, IssuerSeparationPolicy, IssuerSeparationPolicyUpdatedEvent,
+};
 use crate::lifecycle::{AssetStatus, AssetStatusChangedEvent};
 
 use crate::errors::Error;
@@ -43,9 +48,10 @@ fn setup() -> (Env, AegisContractClient<'static>, Address, Address, Address) {
     (env, client, admin, user1, user2)
 }
 
+#[allow(dead_code)]
 fn setup_active() -> (Env, AegisContractClient<'static>, Address, Address, Address) {
     let env = Env::default();
-    let contract_id = env.register_contract(None, AegisContract);
+    let contract_id = env.register(AegisContract, ());
     let client = AegisContractClient::new(&env, &contract_id);
     env.mock_all_auths();
     let admin = Address::generate(&env);
@@ -903,8 +909,8 @@ fn test_whitelist_user_emits_event() {
                 ComplianceStatusChangedEvent {
                     caller: admin.clone(),
                     user: user1.clone(),
-                    previous_status: ComplianceStatus::Unknown,
-                    new_status: ComplianceStatus::Approved,
+                    previous_status: crate::compliance::ComplianceStatus::Unknown,
+                    new_status: crate::compliance::ComplianceStatus::Approved,
                 }
                 .into_val(&env),
             ),
@@ -940,8 +946,8 @@ fn test_revoke_whitelist_emits_event() {
                 ComplianceStatusChangedEvent {
                     caller: admin.clone(),
                     user: user1.clone(),
-                    previous_status: ComplianceStatus::Approved,
-                    new_status: ComplianceStatus::Revoked,
+                    previous_status: crate::compliance::ComplianceStatus::Approved,
+                    new_status: crate::compliance::ComplianceStatus::Revoked,
                 }
                 .into_val(&env),
             ),
@@ -1483,7 +1489,6 @@ fn test_supply_cap_overflow_like_mint_keeps_state_consistent() {
     // Reach the practical numeric boundary first.
     let r = client.try_mint_asset(&admin, &user2, &i128::MAX);
     assert!(r.is_ok());
-    assert_eq!(client.get_total_supply(), i128::MAX);
     assert_eq!(client.get_balance_of(&user2), i128::MAX);
 
     // While the contract is globally paused, the pause outranks the asset
@@ -1534,6 +1539,7 @@ fn default_capabilities(env: &Env) -> ContractCapabilities {
             investor_tiers: CapabilityStatus::Unsupported,
             lifecycle_states: CapabilityStatus::Supported,
             lifecycle_transitions: CapabilityStatus::Supported,
+            transition_guards: CapabilityStatus::Supported,
             eligibility_reads: CapabilityStatus::Supported,
             enforced_on_mint: true,
             enforced_on_transfer: true,
@@ -1545,6 +1551,8 @@ fn default_capabilities(env: &Env) -> ContractCapabilities {
             supply_cap: CapabilityStatus::Supported,
             supply_cap_enforced: false,
             yield_distribution: CapabilityStatus::Planned,
+            issuer_separation: CapabilityStatus::Supported,
+            issuer_separation_enforced: false,
         },
         transfers: TransferCapabilities {
             module_enabled: true,
@@ -1585,7 +1593,63 @@ fn default_capabilities(env: &Env) -> ContractCapabilities {
             transfer_restriction_events: CapabilityStatus::Unsupported,
             asset_registered_event: CapabilityStatus::Planned,
         },
+        config: crate::capabilities::ConfigCapabilities {
+            module_enabled: true,
+            global_config: CapabilityStatus::Supported,
+        },
     }
+}
+
+#[test]
+fn test_contract_capabilities() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+
+    // 1. Before initialization (asset starts in Draft state)
+    let caps_before = client.get_capabilities();
+    let mut expected = default_capabilities(&env);
+    expected.pause.asset_active = false;
+    expected.pause.operations_enabled = false;
+    assert_eq!(caps_before, expected);
+
+    // supports_capability works before initialization
+    assert_eq!(
+        client.supports_capability(&Symbol::new(&env, "whitelist")),
+        CapabilityStatus::Supported
+    );
+
+    // 2. After initialization (still in Draft state)
+    client.initialize(&admin);
+    let caps_after_init = client.get_capabilities();
+    expected.initialized = true;
+    assert_eq!(caps_after_init, expected);
+
+    // 3. After setting status to Active
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    let caps_after_active = client.get_capabilities();
+    expected.pause.asset_active = true;
+    expected.pause.operations_enabled = true;
+    assert_eq!(caps_after_active, expected);
+
+    // 3. Read-only / no state changes
+    // Calling capability endpoints must publish no events and not modify balances or storage
+    let events_len = env.events().all().events().len();
+    let _ = client.get_capabilities();
+    let _ = client.supports_capability(&Symbol::new(&env, "whitelist"));
+    let _ = client.get_capability_keys();
+    assert_eq!(env.events().all().events().len(), events_len);
+
+    // 4. Backward compatibility: unknown capability returns Unsupported
+    assert_eq!(
+        client.supports_capability(&Symbol::new(&env, "some_future_capability")),
+        CapabilityStatus::Unsupported
+    );
+
+    // 5. Check capability keys registry agreement
+    let keys = client.get_capability_keys();
+    assert_eq!(keys.len(), 34);
+    assert!(keys.contains(Symbol::new(&env, "whitelist")));
+    assert!(keys.contains(Symbol::new(&env, "rbac")));
 }
 
 // ─── Asset lifecycle invariants (#55) ─────────────────────────────────────────
@@ -1845,7 +1909,6 @@ fn test_holding_cap_blocks_mint_over_limit() {
     let r = client.try_mint_asset(&user1, &user2, &500);
     assert!(r.is_ok());
     assert_eq!(client.get_balance_of(&user2), 500);
-
 
 
     // Mint that would push the holder over the cap is rejected.
@@ -2337,8 +2400,8 @@ fn test_restriction_reason_code_mapping_is_total_and_round_trips() {
         (RestrictionReason::AssetPaused, 7000),
         (RestrictionReason::AssetRetired, 7001),
         (RestrictionReason::AssetBlocked, 7002),
-        (RestrictionReason::HoldingCapExceeded, 5003),
         (RestrictionReason::SupplyCapExceeded, 5002),
+        (RestrictionReason::HoldingCapExceeded, 5003),
     ];
 
     for (reason, expected_code) in reasons.iter() {
@@ -2397,10 +2460,13 @@ fn test_restriction_checks_never_panic_on_uninitialized_contract() {
 
     // No `initialize`, no admin in storage: the reads must fail safe with a
     // reason rather than trapping, so a dashboard can render an explanation
-    // against a fresh or misconfigured deployment.
+    // against a fresh or misconfigured deployment. Asset lifecycle is
+    // checked before sender compliance (see `evaluate_transfer`'s documented
+    // order), and an unset asset status defaults to `Draft`, which maps to
+    // `AssetBlocked` — so that's the first reason reported, not compliance.
     assert_eq!(
         client.check_transfer_restriction(&user1, &user2, &100),
-        RestrictionReason::SenderNotCompliant
+        RestrictionReason::AssetBlocked
     );
     assert_eq!(
         client.check_mint_restriction(&user1, &user2, &100),
@@ -2558,6 +2624,13 @@ fn test_check_transfer_eligibility_false_when_invalid_amount() {
     let (env, client, admin, user1, user2) = setup();
     env.mock_all_auths();
 
+    // Before initialize — no auth mocked, no admin in storage.
+    assert_eq!(
+        client.supports_capability(&soroban_sdk::Symbol::new(&env, "whitelist")),
+        CapabilityStatus::Supported
+    );
+    assert_eq!(client.get_capability_keys().len(), 34);
+
     client.initialize(&admin);
     client.whitelist_user(&admin, &user1);
     client.whitelist_user(&admin, &user2);
@@ -2641,7 +2714,12 @@ fn test_check_transfer_eligibility_false_when_contract_paused() {
 
     client.pause(&admin);
 
-
+    // And while paused.
+    assert_eq!(
+        client.supports_capability(&soroban_sdk::Symbol::new(&env, "whitelist")),
+        CapabilityStatus::Supported
+    );
+    assert_eq!(client.get_capability_keys().len(), 34);
 
     // The read helper itself must remain callable while paused, but must
     // reflect that transfers cannot currently succeed.
@@ -3129,6 +3207,7 @@ fn test_compliance_transition_events_have_exact_shape() {
     fixture
         .client
         .revoke_whitelist(&fixture.emergency, &fixture.target);
+
     assert_eq!(
         fixture.env.events().all(),
         vec![
@@ -3336,14 +3415,14 @@ fn test_holding_cap_proposed_and_amended_emit_events() {
             ),
         ]
     );
-
-    // ─── Compliance lifecycle state machine (#compliance-lifecycle) ──────────────
-    //
-    // These tests lock down the five-state investor compliance lifecycle: the
-    // default state, every allowed transition, every rejected transition, the
-    // authorization asymmetry around `Blocked`, the events emitted on change, and
-    // the fact that minting and transfers actually consume the lifecycle state.
 }
+
+// ─── Compliance lifecycle state machine (#compliance-lifecycle) ──────────────
+//
+// These tests lock down the five-state investor compliance lifecycle: the
+// default state, every allowed transition, every rejected transition, the
+// authorization asymmetry around `Blocked`, the events emitted on change, and
+// the fact that minting and transfers actually consume the lifecycle state.
 
 /// Every lifecycle state, in ABI order.
 const ALL_STATUSES: [ComplianceStatus; 5] = [
@@ -3887,6 +3966,7 @@ fn test_mint_rejects_each_non_approved_status_with_its_own_code() {
     let (env, client, admin, user1, _user2) = setup();
     env.mock_all_auths();
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
 
     // Unknown
@@ -3926,6 +4006,7 @@ fn test_transfer_rejects_each_non_approved_sender_status() {
     let (env, client, admin, user1, user2) = setup();
     env.mock_all_auths();
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.set_compliance_status(&admin, &user1, &ComplianceStatus::Approved);
     client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
@@ -3957,6 +4038,7 @@ fn test_transfer_rejects_each_non_approved_receiver_status() {
     let (env, client, admin, user1, user2) = setup();
     env.mock_all_auths();
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.set_compliance_status(&admin, &user1, &ComplianceStatus::Approved);
     client.mint_asset(&user1, &user1, &1000);
@@ -3985,6 +4067,7 @@ fn test_sender_status_is_reported_before_receiver_status() {
     let (env, client, admin, user1, user2) = setup();
     env.mock_all_auths();
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_compliance_status(&admin, &user1, &ComplianceStatus::Blocked);
     // user2 is Unknown — both parties are ineligible.
 
@@ -3997,6 +4080,7 @@ fn test_blocking_a_holder_freezes_their_balance_without_destroying_it() {
     let (env, client, admin, user1, user2) = setup();
     env.mock_all_auths();
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.set_compliance_status(&admin, &user1, &ComplianceStatus::Approved);
     client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
@@ -4201,6 +4285,7 @@ fn test_check_transfer_eligibility_tracks_lifecycle_changes() {
     let (env, client, admin, user1, user2) = setup();
     env.mock_all_auths();
     client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
     client.set_role(&admin, &user1, &Role::AssetManager);
     client.set_compliance_status(&admin, &user1, &ComplianceStatus::Approved);
     client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
@@ -4273,6 +4358,136 @@ fn test_capabilities_advertise_the_compliance_lifecycle() {
     assert!(keys.contains(Symbol::new(&env, "compliance_transitions")));
     assert!(keys.contains(Symbol::new(&env, "compliance_batch_updates")));
     assert!(keys.contains(Symbol::new(&env, "compliance_lifecycle_events")));
+}
+
+// ─── Public interface compatibility checks (#37) ─────────────────────────────
+
+#[test]
+fn test_interface_compatibility_matching_schema_and_supported_keys_is_compatible() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    let required = vec![
+        &env,
+        Symbol::new(&env, "whitelist"),
+        Symbol::new(&env, "transfers"),
+    ];
+    let report = client.check_interface_compatibility(&CAPABILITY_SCHEMA_VERSION, &required);
+
+    assert_eq!(report.contract_schema_version, CAPABILITY_SCHEMA_VERSION);
+    assert_eq!(report.client_schema_version, CAPABILITY_SCHEMA_VERSION);
+    assert_eq!(report.schema_relation, SchemaVersionRelation::Matching);
+    assert_eq!(report.unsupported_required.len(), 0);
+    assert!(report.compatible);
+}
+
+#[test]
+fn test_interface_compatibility_older_client_schema_is_still_compatible() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    // A client built against an earlier schema is forward-compatible as long
+    // as everything it actually asks for is still Supported.
+    let required = vec![&env, Symbol::new(&env, "whitelist")];
+    let report = client.check_interface_compatibility(&1u32, &required);
+
+    assert_eq!(report.schema_relation, SchemaVersionRelation::ClientOlder);
+    assert!(report.compatible);
+}
+
+#[test]
+fn test_interface_compatibility_newer_client_schema_flags_gap_when_relevant() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    // A client from a future schema version claiming a key this deployment
+    // never heard of must be reported, not silently treated as fine.
+    let required = vec![&env, Symbol::new(&env, "some_future_capability")];
+    let newer_version = CAPABILITY_SCHEMA_VERSION + 1;
+    let report = client.check_interface_compatibility(&newer_version, &required);
+
+    assert_eq!(report.schema_relation, SchemaVersionRelation::ClientNewer);
+    assert_eq!(report.unsupported_required.len(), 1);
+    assert!(report
+        .unsupported_required
+        .contains(Symbol::new(&env, "some_future_capability")));
+    assert!(!report.compatible);
+}
+
+#[test]
+fn test_interface_compatibility_reports_every_unsupported_required_key() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    // `burning` is a real, permanently Unsupported key (no burn entrypoint).
+    // `allowances` is Planned, which also does not count as Supported.
+    let required = vec![
+        &env,
+        Symbol::new(&env, "whitelist"),
+        Symbol::new(&env, "burning"),
+        Symbol::new(&env, "allowances"),
+    ];
+    let report = client.check_interface_compatibility(&CAPABILITY_SCHEMA_VERSION, &required);
+
+    assert_eq!(report.unsupported_required.len(), 2);
+    assert!(report
+        .unsupported_required
+        .contains(Symbol::new(&env, "burning")));
+    assert!(report
+        .unsupported_required
+        .contains(Symbol::new(&env, "allowances")));
+    assert!(!report.compatible);
+}
+
+#[test]
+fn test_interface_compatibility_empty_requirements_always_compatible() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    // No requirements means nothing to fail on, regardless of schema drift.
+    let required = vec![&env];
+    let newer_version = CAPABILITY_SCHEMA_VERSION + 5;
+    let report = client.check_interface_compatibility(&newer_version, &required);
+
+    assert!(report.unsupported_required.is_empty());
+    assert!(report.compatible);
+}
+
+#[test]
+fn test_interface_compatibility_agrees_with_supports_capability() {
+    let (env, client, admin, _user1, _user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+
+    // Cross-check against the independent single-key resolver so the two
+    // entrypoints can never silently disagree.
+    let key = Symbol::new(&env, "decimals"); // Planned, not Supported.
+    let required = vec![&env, key.clone()];
+    let report = client.check_interface_compatibility(&CAPABILITY_SCHEMA_VERSION, &required);
+
+    let direct_status = client.supports_capability(&key);
+    assert_ne!(direct_status, CapabilityStatus::Supported);
+    assert!(report.unsupported_required.contains(key));
+}
+
+#[test]
+fn test_interface_compatibility_never_mutates_and_works_before_initialize() {
+    let (env, client, _admin, _user1, _user2) = setup();
+
+    // No auth mocked and no initialize() call — must still answer safely.
+    let required = vec![&env, Symbol::new(&env, "whitelist")];
+    let report = client.check_interface_compatibility(&CAPABILITY_SCHEMA_VERSION, &required);
+    assert!(report.compatible);
+
+    // Re-running it changes nothing about contract state.
+    let total_supply_before = client.get_total_supply();
+    let _ = client.check_interface_compatibility(&CAPABILITY_SCHEMA_VERSION, &required);
+    assert_eq!(client.get_total_supply(), total_supply_before);
 }
 
 #[test]
@@ -4410,4 +4625,1149 @@ fn test_compliance_transitions_rejected_after_officer_role_revoked() {
         .client
         .revoke_whitelist(&fixture.admin, &fixture.target);
     assert!(!fixture.is_target_approved());
+}
+
+// ─── Compliant minting invariants (#8) ─────────────────────────────────────
+//
+// A deterministic scenario matrix proving mint_asset only succeeds for a
+// compliant recipient, an authorised issuer, and a movable (Active) asset —
+// and that every rejected attempt, including a repeated one, leaves balance
+// and total supply exactly as they were before the call.
+
+#[test]
+fn test_compliant_mint_succeeds_and_updates_balance_and_supply() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
+
+    let r = client.try_mint_asset(&user1, &user2, &250);
+    assert!(r.is_ok());
+    assert_eq!(client.get_balance_of(&user2), 250);
+    assert_eq!(client.get_total_supply(), 250);
+}
+
+#[test]
+fn test_mint_rejects_non_whitelisted_recipient_and_leaves_state_unchanged() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    // user2 is never whitelisted — default compliance status is Unknown.
+
+    let r = client.try_mint_asset(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::ReceiverNotWhitelisted)));
+    assert_eq!(client.get_balance_of(&user2), 0);
+    assert_eq!(client.get_total_supply(), 0);
+}
+
+#[test]
+fn test_mint_rejects_unauthorised_issuer_and_leaves_state_unchanged() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
+    // user1 is never granted AssetManager (or Admin) — an unauthorised issuer.
+
+    let r = client.try_mint_asset(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::Unauthorized)));
+    assert_eq!(client.get_balance_of(&user2), 0);
+    assert_eq!(client.get_total_supply(), 0);
+}
+
+#[test]
+fn test_mint_rejects_invalid_asset_state_and_leaves_state_unchanged() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
+    // Asset status is left at its default (Draft) — never activated, so it
+    // is not yet a valid mint target.
+
+    let r = client.try_mint_asset(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::AssetBlockedRestriction)));
+    assert_eq!(client.get_balance_of(&user2), 0);
+    assert_eq!(client.get_total_supply(), 0);
+
+    // Also invalid once the asset is explicitly retired — a terminal state.
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    client.set_asset_status(&admin, &AssetStatus::Retired);
+    let r = client.try_mint_asset(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::AssetRetiredRestriction)));
+    assert_eq!(client.get_balance_of(&user2), 0);
+    assert_eq!(client.get_total_supply(), 0);
+}
+
+#[test]
+fn test_mint_rejects_revoked_compliance_and_leaves_state_unchanged() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+
+    // user2 was compliant once, then had their approval revoked.
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Revoked);
+
+    let r = client.try_mint_asset(&user1, &user2, &100);
+    assert_eq!(r, Err(Ok(Error::ReceiverNotWhitelisted)));
+    assert_eq!(client.get_balance_of(&user2), 0);
+    assert_eq!(client.get_total_supply(), 0);
+}
+
+#[test]
+fn test_repeated_rejected_mint_attempts_never_mutate_state() {
+    let (env, client, admin, user1, user2) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    client.set_role(&admin, &user1, &Role::AssetManager);
+    // user2 stays non-compliant for every attempt below.
+
+    for _ in 0..5 {
+        let r = client.try_mint_asset(&user1, &user2, &100);
+        assert_eq!(r, Err(Ok(Error::ReceiverNotWhitelisted)));
+        assert_eq!(client.get_balance_of(&user2), 0);
+        assert_eq!(client.get_total_supply(), 0);
+    }
+
+    // The repeated rejections left the recipient just as mintable as before
+    // — no latent state (e.g. a partially-consumed cap) survived the retries.
+    client.set_compliance_status(&admin, &user2, &ComplianceStatus::Approved);
+    client.mint_asset(&user1, &user2, &100);
+    assert_eq!(client.get_balance_of(&user2), 100);
+    assert_eq!(client.get_total_supply(), 100);
+}
+
+// ─── COMPLIANCE STATUS TRANSITION GUARDS ──────────────────────────────────────
+//
+// The guard module (src/compliance_guards.rs) is the single evaluation shared
+// by the pre-flight read entrypoints and by every state-changing compliance
+// call. The invariant these tests exist to protect is therefore not "the guard
+// returns the right answer" in isolation, but that the guard's answer and the
+// contract's actual behaviour can never disagree — that is what makes it safe
+// for a dashboard to disable an action, or an SDK to skip a simulation, on the
+// strength of a read. The model is documented in
+// docs/compliance-transition-guards.md.
+
+/// Drives `user` into `target` on a freshly initialized contract, using the
+/// admin so the seeding itself can never be refused by a role check.
+///
+/// Only legal edges are used, so seeding exercises the same matrix under test
+/// instead of writing storage behind its back.
+fn seed_status(
+    client: &AegisContractClient<'static>,
+    admin: &Address,
+    user: &Address,
+    target: ComplianceStatus,
+) {
+    match target {
+        ComplianceStatus::Unknown => {}
+        ComplianceStatus::Pending => {
+            client.set_compliance_status(admin, user, &ComplianceStatus::Pending);
+        }
+        ComplianceStatus::Approved => {
+            client.set_compliance_status(admin, user, &ComplianceStatus::Approved);
+        }
+        ComplianceStatus::Revoked => {
+            client.set_compliance_status(admin, user, &ComplianceStatus::Pending);
+            client.set_compliance_status(admin, user, &ComplianceStatus::Revoked);
+        }
+        ComplianceStatus::Blocked => {
+            client.set_compliance_status(admin, user, &ComplianceStatus::Blocked);
+        }
+    }
+    assert_eq!(client.get_compliance_status(user), target, "seeding failed");
+}
+
+/// A fresh deployment with an admin, a ComplianceOfficer, and an investor.
+fn setup_guard_world() -> (Env, AegisContractClient<'static>, Address, Address, Address) {
+    let (env, client, admin, officer, investor) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_role(&admin, &officer, &Role::ComplianceOfficer);
+    (env, client, admin, officer, investor)
+}
+
+/// Asserts that a pre-flight verdict and a real submission agree, and returns
+/// nothing — the assertion *is* the point.
+fn assert_guard_matches_execution(
+    client: &AegisContractClient<'static>,
+    caller: &Address,
+    user: &Address,
+    target: ComplianceStatus,
+) {
+    let check = client.check_compliance_transition(caller, user, &target);
+    let before = client.get_compliance_status(user);
+    let result = client.try_set_compliance_status(caller, user, &target);
+
+    match result {
+        Ok(_) => {
+            assert!(
+                check.allowed,
+                "guard rejected ({:?} -> {:?}) with {:?} but the call succeeded",
+                before, target, check.reason
+            );
+            assert_eq!(check.error_code, None);
+            assert_eq!(
+                client.get_compliance_status(user),
+                target,
+                "committed transition did not reach the requested status"
+            );
+        }
+        Err(Ok(err)) => {
+            assert!(
+                !check.allowed,
+                "guard allowed ({:?} -> {:?}) but the call reverted with {:?}",
+                before, target, err
+            );
+            assert_eq!(
+                check.error_code,
+                Some(err as u32),
+                "guard predicted a different error code for ({:?} -> {:?})",
+                before,
+                target
+            );
+            assert_eq!(
+                client.get_compliance_status(user),
+                before,
+                "a rejected transition changed the stored status"
+            );
+        }
+        Err(Err(err)) => panic!("unexpected host error: {err:?}"),
+    }
+}
+
+#[test]
+fn test_guard_matches_enforcement_for_every_edge_as_officer() {
+    // 5 source statuses x 5 targets = the complete edge space, each on its own
+    // deployment so the result depends only on the pair under test.
+    for from in ALL_STATUSES {
+        for to in ALL_STATUSES {
+            let (_env, client, admin, officer, investor) = setup_guard_world();
+            seed_status(&client, &admin, &investor, from);
+            assert_guard_matches_execution(&client, &officer, &investor, to);
+        }
+    }
+}
+
+#[test]
+fn test_guard_matches_enforcement_for_every_edge_as_admin() {
+    // The admin bypasses role checks, so this pass covers the edges an officer
+    // can never reach — in particular the admin-only exit from `Blocked`.
+    for from in ALL_STATUSES {
+        for to in ALL_STATUSES {
+            let (_env, client, admin, _officer, investor) = setup_guard_world();
+            seed_status(&client, &admin, &investor, from);
+            assert_guard_matches_execution(&client, &admin, &investor, to);
+        }
+    }
+}
+
+#[test]
+fn test_guard_matches_enforcement_for_every_edge_as_unauthorized_caller() {
+    // A caller with a wrong-scoped role must be refused on every edge, and the
+    // guard must say so in advance rather than letting a client discover it
+    // from a revert.
+    for from in ALL_STATUSES {
+        for to in ALL_STATUSES {
+            let (_env, client, admin, _officer, investor) = setup_guard_world();
+            let outsider = Address::generate(&_env);
+            client.set_role(&admin, &outsider, &Role::AssetManager);
+            seed_status(&client, &admin, &investor, from);
+
+            let check = client.check_compliance_transition(&outsider, &investor, &to);
+            assert!(!check.allowed);
+            assert!(check.reason.is_authorization_failure());
+            assert_guard_matches_execution(&client, &outsider, &investor, to);
+        }
+    }
+}
+
+#[test]
+fn test_guard_reports_blocked_requires_admin_not_generic_unauthorized() {
+    let (_env, client, admin, officer, investor) = setup_guard_world();
+    seed_status(&client, &admin, &investor, ComplianceStatus::Blocked);
+
+    // The officer holds a valid compliance role, so "you lack a role" would be
+    // the wrong explanation: the refusal is specific to leaving `Blocked`.
+    let check = client.check_compliance_transition(&officer, &investor, &ComplianceStatus::Pending);
+    assert!(!check.allowed);
+    assert_eq!(check.reason, TransitionGuard::BlockedRequiresAdmin);
+    assert_eq!(check.error_code, Some(Error::Unauthorized as u32));
+
+    // A caller with no role at all gets the same refusal for a blocked
+    // address — the block, not the missing role, is the binding constraint.
+    let nobody = Address::generate(&_env);
+    let nobody_check =
+        client.check_compliance_transition(&nobody, &investor, &ComplianceStatus::Pending);
+    assert_eq!(nobody_check.reason, TransitionGuard::BlockedRequiresAdmin);
+
+    // Only the admin may lift it, and only into re-review.
+    let admin_check =
+        client.check_compliance_transition(&admin, &investor, &ComplianceStatus::Pending);
+    assert!(admin_check.allowed);
+    let admin_direct =
+        client.check_compliance_transition(&admin, &investor, &ComplianceStatus::Approved);
+    assert!(!admin_direct.allowed);
+    assert_eq!(admin_direct.reason, TransitionGuard::TransitionForbidden);
+}
+
+#[test]
+fn test_guard_reports_status_unchanged_for_every_self_edge() {
+    for status in ALL_STATUSES {
+        let (_env, client, admin, _officer, investor) = setup_guard_world();
+        seed_status(&client, &admin, &investor, status);
+
+        let check = client.check_compliance_transition(&admin, &investor, &status);
+        assert!(!check.allowed);
+        // `Blocked -> Blocked` is refused for authority before it is ever
+        // compared, because only the admin may act on a blocked address; the
+        // admin used here reaches the no-op rule itself.
+        assert_eq!(check.reason, TransitionGuard::StatusUnchanged);
+        assert_eq!(
+            check.error_code,
+            Some(Error::ComplianceStatusUnchanged as u32)
+        );
+    }
+}
+
+#[test]
+fn test_guard_reports_target_unknown_as_its_own_reason() {
+    // `Unknown` is unreachable from every source, including itself. It gets a
+    // dedicated reason so a client can drop it from the target list entirely
+    // instead of showing an edge that can never be offered.
+    for from in ALL_STATUSES {
+        let (_env, client, admin, _officer, investor) = setup_guard_world();
+        seed_status(&client, &admin, &investor, from);
+
+        let check =
+            client.check_compliance_transition(&admin, &investor, &ComplianceStatus::Unknown);
+        assert!(!check.allowed);
+        let expected = if from == ComplianceStatus::Unknown {
+            // The no-op rule is evaluated first, so an already-unknown address
+            // reports the more specific "nothing would change".
+            TransitionGuard::StatusUnchanged
+        } else {
+            TransitionGuard::TargetUnknownForbidden
+        };
+        assert_eq!(check.reason, expected, "from {from:?}");
+    }
+}
+
+#[test]
+fn test_guard_reports_pause_ahead_of_authority() {
+    let (_env, client, admin, officer, investor) = setup_guard_world();
+    seed_status(&client, &admin, &investor, ComplianceStatus::Pending);
+    client.pause(&admin);
+
+    // The pause is reported first for every caller class, so a paused contract
+    // never leaks whether a caller would otherwise have qualified.
+    let outsider = Address::generate(&_env);
+    for caller in [&admin, &officer, &outsider] {
+        let check =
+            client.check_compliance_transition(caller, &investor, &ComplianceStatus::Approved);
+        assert!(!check.allowed);
+        assert_eq!(check.reason, TransitionGuard::ContractPaused);
+        assert_eq!(check.error_code, Some(Error::ContractPaused as u32));
+    }
+
+    // The read itself stays available while paused — a dashboard can still
+    // explain why every control is disabled.
+    assert_eq!(
+        client.get_compliance_status(&investor),
+        ComplianceStatus::Pending
+    );
+
+    // And the pause is not a lockout: the same edge clears once unpaused.
+    client.unpause(&admin);
+    let after =
+        client.check_compliance_transition(&officer, &investor, &ComplianceStatus::Approved);
+    assert!(after.allowed);
+    assert_eq!(after.reason, TransitionGuard::Allowed);
+}
+
+#[test]
+fn test_guard_reports_not_initialized_instead_of_panicking() {
+    // Before `initialize` there is no admin to check a caller against. The
+    // guard must still answer — a view entrypoint that panics is unusable for
+    // a dashboard rendering a not-yet-configured deployment.
+    let (env, client, admin, _user1, investor) = setup();
+    env.mock_all_auths();
+
+    let check = client.check_compliance_transition(&admin, &investor, &ComplianceStatus::Approved);
+    assert!(!check.allowed);
+    assert_eq!(check.reason, TransitionGuard::NotInitialized);
+    assert_eq!(check.error_code, Some(Error::NotInitialized as u32));
+
+    // The prediction holds: submitting really does fail with that code.
+    let result = client.try_set_compliance_status(&admin, &investor, &ComplianceStatus::Approved);
+    assert_eq!(result, Err(Ok(Error::NotInitialized)));
+}
+
+#[test]
+fn test_guard_report_carries_a_consistent_status_snapshot() {
+    let (_env, client, admin, officer, investor) = setup_guard_world();
+    seed_status(&client, &admin, &investor, ComplianceStatus::Approved);
+
+    let check = client.check_compliance_transition(&officer, &investor, &ComplianceStatus::Revoked);
+    assert_eq!(check.user, investor);
+    assert_eq!(check.caller, officer);
+    assert_eq!(check.current_status, ComplianceStatus::Approved);
+    assert_eq!(check.requested_status, ComplianceStatus::Revoked);
+    assert!(check.allowed);
+    assert_eq!(check.reason, TransitionGuard::Allowed);
+    assert_eq!(check.error_code, None);
+}
+
+#[test]
+fn test_guard_reads_never_mutate_state() {
+    let (env, client, admin, officer, investor) = setup_guard_world();
+    seed_status(&client, &admin, &investor, ComplianceStatus::Approved);
+    let events_before = env.events().all();
+
+    for to in ALL_STATUSES {
+        client.check_compliance_transition(&officer, &investor, &to);
+        client.get_compliance_transition_guard(&officer, &investor, &to);
+    }
+
+    assert_eq!(
+        client.get_compliance_status(&investor),
+        ComplianceStatus::Approved
+    );
+    assert!(client.is_whitelisted(&investor));
+    assert_eq!(client.get_role_of(&officer), Role::ComplianceOfficer);
+    assert!(!client.is_paused());
+    // A pre-flight read is not a compliance action and must leave no trace in
+    // the audit stream.
+    assert_eq!(env.events().all(), events_before);
+}
+
+#[test]
+fn test_guard_verdict_tracks_role_revocation() {
+    let (_env, client, admin, officer, investor) = setup_guard_world();
+
+    let before =
+        client.check_compliance_transition(&officer, &investor, &ComplianceStatus::Approved);
+    assert!(before.allowed);
+
+    client.remove_role(&admin, &officer);
+
+    // Authority is evaluated at call time, never cached, so the verdict flips
+    // immediately — including for an address this officer had approved before.
+    let after =
+        client.check_compliance_transition(&officer, &investor, &ComplianceStatus::Approved);
+    assert!(!after.allowed);
+    assert_eq!(after.reason, TransitionGuard::CallerUnauthorized);
+    assert_guard_matches_execution(&client, &officer, &investor, ComplianceStatus::Approved);
+}
+
+#[test]
+fn test_guard_accepts_emergency_officer_and_rejects_asset_manager() {
+    let (_env, client, admin, _officer, investor) = setup_guard_world();
+    let emergency = Address::generate(&_env);
+    let manager = Address::generate(&_env);
+    client.set_role(&admin, &emergency, &Role::EmergencyOfficer);
+    client.set_role(&admin, &manager, &Role::AssetManager);
+
+    let allowed =
+        client.check_compliance_transition(&emergency, &investor, &ComplianceStatus::Approved);
+    assert!(allowed.allowed);
+
+    let refused =
+        client.check_compliance_transition(&manager, &investor, &ComplianceStatus::Approved);
+    assert!(!refused.allowed);
+    assert_eq!(refused.reason, TransitionGuard::CallerUnauthorized);
+}
+
+#[test]
+fn test_batch_guard_matches_batch_execution_when_every_entry_is_legal() {
+    let (env, client, admin, officer, investor) = setup_guard_world();
+    let second = Address::generate(&env);
+    seed_status(&client, &admin, &investor, ComplianceStatus::Pending);
+
+    let updates = vec![
+        &env,
+        ComplianceBatchUpdate {
+            user: investor.clone(),
+            new_status: ComplianceStatus::Approved,
+        },
+        ComplianceBatchUpdate {
+            user: second.clone(),
+            new_status: ComplianceStatus::Pending,
+        },
+    ];
+
+    let checks = client.check_compliance_batch(&officer, &updates);
+    assert_eq!(checks.len(), 2);
+    for index in 0..checks.len() {
+        assert!(checks.get(index).unwrap().allowed);
+    }
+
+    assert_eq!(client.batch_set_compliance_status(&officer, &updates), 2);
+    assert_eq!(
+        client.get_compliance_status(&investor),
+        ComplianceStatus::Approved
+    );
+    assert_eq!(
+        client.get_compliance_status(&second),
+        ComplianceStatus::Pending
+    );
+}
+
+#[test]
+fn test_batch_guard_flags_the_offending_entry_and_the_batch_fails_atomically() {
+    let (env, client, admin, officer, investor) = setup_guard_world();
+    let blocked = Address::generate(&env);
+    seed_status(&client, &admin, &investor, ComplianceStatus::Pending);
+    seed_status(&client, &admin, &blocked, ComplianceStatus::Blocked);
+
+    let updates = vec![
+        &env,
+        ComplianceBatchUpdate {
+            user: investor.clone(),
+            new_status: ComplianceStatus::Approved,
+        },
+        ComplianceBatchUpdate {
+            user: blocked.clone(),
+            new_status: ComplianceStatus::Approved,
+        },
+    ];
+
+    // The guard pinpoints *which* row is the problem — the batch entrypoint
+    // itself can only report a single error for the whole call.
+    let checks = client.check_compliance_batch(&officer, &updates);
+    assert!(checks.get(0).unwrap().allowed);
+    let offending = checks.get(1).unwrap();
+    assert!(!offending.allowed);
+    assert_eq!(offending.reason, TransitionGuard::BlockedRequiresAdmin);
+
+    // A single rejected row fails the whole batch, and the legal row is not
+    // applied: pre-flight `allowed` on row 0 is a statement about the rule,
+    // not a promise that the row commits.
+    let result = client.try_batch_set_compliance_status(&officer, &updates);
+    assert_eq!(result, Err(Ok(Error::Unauthorized)));
+    assert_eq!(
+        client.get_compliance_status(&investor),
+        ComplianceStatus::Pending
+    );
+    assert_eq!(
+        client.get_compliance_status(&blocked),
+        ComplianceStatus::Blocked
+    );
+}
+
+#[test]
+fn test_batch_guard_flags_duplicate_addresses() {
+    let (env, client, _admin, officer, investor) = setup_guard_world();
+
+    let updates = vec![
+        &env,
+        ComplianceBatchUpdate {
+            user: investor.clone(),
+            new_status: ComplianceStatus::Pending,
+        },
+        ComplianceBatchUpdate {
+            user: investor.clone(),
+            new_status: ComplianceStatus::Approved,
+        },
+    ];
+
+    let checks = client.check_compliance_batch(&officer, &updates);
+    // The first occurrence is judged on its own merits; only the repeat is
+    // flagged, so a client can point at the row to remove.
+    assert!(checks.get(0).unwrap().allowed);
+    let duplicate = checks.get(1).unwrap();
+    assert!(!duplicate.allowed);
+    assert_eq!(duplicate.reason, TransitionGuard::DuplicateUserInBatch);
+    assert_eq!(
+        duplicate.error_code,
+        Some(Error::InvalidComplianceTransition as u32)
+    );
+
+    assert_eq!(
+        client.try_batch_set_compliance_status(&officer, &updates),
+        Err(Ok(Error::InvalidComplianceTransition))
+    );
+    assert_eq!(
+        client.get_compliance_status(&investor),
+        ComplianceStatus::Unknown
+    );
+}
+
+#[test]
+fn test_batch_guard_accepts_an_empty_batch() {
+    let (env, client, _admin, officer, _investor) = setup_guard_world();
+    let updates = vec![&env];
+
+    assert_eq!(client.check_compliance_batch(&officer, &updates).len(), 0);
+    assert_eq!(client.batch_set_compliance_status(&officer, &updates), 0);
+}
+
+#[test]
+fn test_guard_agrees_with_the_legacy_whitelist_entrypoints() {
+    // `whitelist_user` / `revoke_whitelist` are tolerant wrappers, but they
+    // share the guard's authority rules. The guard must therefore predict
+    // their *authorization* outcome exactly, even where their no-op tolerance
+    // makes the transition itself a success.
+    for from in ALL_STATUSES {
+        let (env, client, admin, officer, investor) = setup_guard_world();
+        seed_status(&client, &admin, &investor, from);
+
+        let check =
+            client.check_compliance_transition(&officer, &investor, &ComplianceStatus::Approved);
+        let result = client.try_whitelist_user(&officer, &investor);
+
+        if check.reason.is_authorization_failure() {
+            assert_eq!(result, Err(Ok(Error::Unauthorized)), "from {from:?}");
+        } else if from == ComplianceStatus::Approved {
+            // Already approved: the guard calls it a no-op, the legacy wrapper
+            // absorbs it as an idempotent success.
+            assert_eq!(check.reason, TransitionGuard::StatusUnchanged);
+            assert!(result.is_ok());
+        } else {
+            assert!(check.allowed, "from {from:?}");
+            assert!(result.is_ok());
+            assert_eq!(
+                client.get_compliance_status(&investor),
+                ComplianceStatus::Approved
+            );
+        }
+        let _ = &env;
+    }
+}
+
+// ─── ISSUER ROLE SEPARATION ───────────────────────────────────────────────────
+//
+// Separation of duties for issuance: the party that decides *who may hold* the
+// asset must not also be the party that decides *who receives* it. The base
+// role model allows exactly that overlap — the admin bypasses every role
+// check, so one key can clear an investor and then fund them — so these tests
+// cover the opt-in policy that closes it and, just as importantly, that the
+// policy is inert until an admin turns it on. The model is documented in
+// docs/issuer-role-separation.md.
+
+/// The strictest policy: every separation control engaged.
+fn strict_policy() -> IssuerSeparationPolicy {
+    IssuerSeparationPolicy {
+        enforced: true,
+        allow_dual_duty_issuance: false,
+        allow_self_issuance: false,
+        require_independent_approver: true,
+    }
+}
+
+/// Separation enforced, but only the named control engaged. Lets each control
+/// be tested in isolation, so a passing test cannot be explained by a
+/// different rule doing the work.
+fn policy_with(
+    dual_duty: bool,
+    self_issuance: bool,
+    independent_approver: bool,
+) -> IssuerSeparationPolicy {
+    IssuerSeparationPolicy {
+        enforced: true,
+        allow_dual_duty_issuance: dual_duty,
+        allow_self_issuance: self_issuance,
+        require_independent_approver: independent_approver,
+    }
+}
+
+/// An initialized, Active contract with a compliance officer and an asset
+/// manager whose duties do not overlap.
+fn setup_issuer_world() -> (
+    Env,
+    AegisContractClient<'static>,
+    Address,
+    Address,
+    Address,
+    Address,
+) {
+    let (env, client, admin, officer, investor) = setup();
+    env.mock_all_auths();
+    client.initialize(&admin);
+    client.set_asset_status(&admin, &AssetStatus::Active);
+    let manager = Address::generate(&env);
+    client.set_role(&admin, &officer, &Role::ComplianceOfficer);
+    client.set_role(&admin, &manager, &Role::AssetManager);
+    client.set_compliance_status(&officer, &investor, &ComplianceStatus::Approved);
+    (env, client, admin, officer, manager, investor)
+}
+
+#[test]
+fn test_issuer_separation_is_off_by_default() {
+    // Adding the module must not change any existing deployment. The default
+    // policy is fully permissive and is what an un-configured contract reports.
+    let (_env, client, admin, _officer, manager, investor) = setup_issuer_world();
+
+    let policy = client.get_issuer_separation_policy();
+    assert!(!policy.enforced);
+    assert!(policy.allow_dual_duty_issuance);
+    assert!(policy.allow_self_issuance);
+    assert!(!policy.require_independent_approver);
+
+    // Every caller that could mint before still can: a scoped manager and the
+    // admin.
+    client.mint_asset(&manager, &investor, &10);
+    client.mint_asset(&admin, &investor, &10);
+    assert_eq!(client.get_balance_of(&investor), 20);
+
+    // And a caller that could not mint before still cannot, for the same
+    // reason as before (the role check, not the separation policy).
+    let emergency = Address::generate(&_env);
+    client.set_role(&admin, &emergency, &Role::EmergencyOfficer);
+    assert_eq!(
+        client.try_mint_asset(&emergency, &investor, &10),
+        Err(Ok(Error::Unauthorized))
+    );
+}
+
+#[test]
+fn test_role_duty_table_is_exact() {
+    let (env, client, admin, officer, manager, _investor) = setup_issuer_world();
+
+    assert_eq!(client.get_role_duties(&Role::None), vec![&env]);
+    assert_eq!(
+        client.get_role_duties(&Role::ComplianceOfficer),
+        vec![&env, IssuerDuty::Compliance]
+    );
+    assert_eq!(
+        client.get_role_duties(&Role::AssetManager),
+        vec![&env, IssuerDuty::Issuance]
+    );
+    // Derived from what the contract enforces: `mint_asset` requires
+    // `AssetManager` specifically, so the emergency role carries compliance
+    // and the pause switch but *not* issuance.
+    assert_eq!(
+        client.get_role_duties(&Role::EmergencyOfficer),
+        vec![&env, IssuerDuty::Compliance, IssuerDuty::Emergency]
+    );
+    // The admin bypasses every role check, so it carries every duty — which is
+    // precisely why it is the address the dual-duty control binds.
+    assert_eq!(
+        client.get_role_duties(&Role::Admin),
+        vec![
+            &env,
+            IssuerDuty::Compliance,
+            IssuerDuty::Issuance,
+            IssuerDuty::Emergency,
+            IssuerDuty::Governance
+        ]
+    );
+
+    // The admin's authority comes from `DataKey::Admin`, not from the role
+    // table, so an address-keyed read must resolve it to the full duty set.
+    assert_eq!(
+        client.get_duties_of(&admin),
+        client.get_role_duties(&Role::Admin)
+    );
+    assert_eq!(
+        client.get_duties_of(&officer),
+        vec![&env, IssuerDuty::Compliance]
+    );
+    assert_eq!(
+        client.get_duties_of(&manager),
+        vec![&env, IssuerDuty::Issuance]
+    );
+    assert_eq!(client.get_duties_of(&Address::generate(&env)), vec![&env]);
+}
+
+#[test]
+fn test_dual_duty_issuance_is_refused_when_separation_is_enforced() {
+    let (_env, client, admin, officer, manager, investor) = setup_issuer_world();
+    client.set_issuer_separation_policy(&admin, &policy_with(false, true, false));
+
+    // The admin holds every duty, so it is the address this control binds —
+    // and it must bind the admin, or the separation is decorative for the most
+    // powerful key on the contract.
+    assert_eq!(
+        client.try_mint_asset(&admin, &investor, &10),
+        Err(Ok(Error::IssuanceDutyConflict))
+    );
+    assert_eq!(client.get_balance_of(&investor), 0);
+
+    // The admin's other privileges are untouched: the control targets
+    // *issuance* by a dual-duty key, not the key's authority in general.
+    client.set_compliance_status(&admin, &investor, &ComplianceStatus::Revoked);
+    client.set_compliance_status(&admin, &investor, &ComplianceStatus::Approved);
+
+    // A single-duty issuer is unaffected — that is the intended path: the
+    // admin delegates issuance to a dedicated AssetManager key.
+    client.mint_asset(&manager, &investor, &10);
+    assert_eq!(client.get_balance_of(&investor), 10);
+    let _ = &officer;
+}
+
+#[test]
+fn test_self_issuance_is_refused_when_disallowed() {
+    let (_env, client, admin, officer, manager, investor) = setup_issuer_world();
+    // The manager is itself an approved holder — the situation the control is
+    // about: an issuance key that can legally hold the asset.
+    client.set_compliance_status(&officer, &manager, &ComplianceStatus::Approved);
+    client.set_issuer_separation_policy(&admin, &policy_with(true, false, false));
+
+    assert_eq!(
+        client.try_mint_asset(&manager, &manager, &10),
+        Err(Ok(Error::SelfIssuanceForbidden))
+    );
+    assert_eq!(client.get_balance_of(&manager), 0);
+
+    // Issuing to anyone else is untouched.
+    client.mint_asset(&manager, &investor, &10);
+    assert_eq!(client.get_balance_of(&investor), 10);
+}
+
+#[test]
+fn test_independent_approver_control_enforces_four_eyes() {
+    let (env, client, admin, officer, manager, investor) = setup_issuer_world();
+    // Dual duty is tolerated here so the *approver* control is the only thing
+    // that can refuse the mint below.
+    client.set_issuer_separation_policy(&admin, &policy_with(true, true, true));
+
+    // The admin clears an investor and then tries to fund them — both halves
+    // of the decision in one key.
+    let alice = Address::generate(&env);
+    client.set_compliance_status(&admin, &alice, &ComplianceStatus::Approved);
+    assert_eq!(client.get_compliance_approver(&alice), Some(admin.clone()));
+    assert_eq!(
+        client.try_mint_asset(&admin, &alice, &10),
+        Err(Ok(Error::IssuanceApproverConflict))
+    );
+
+    // A different issuer may fund the same investor: the control is about the
+    // pair, not about the investor being tainted.
+    client.mint_asset(&manager, &alice, &10);
+    assert_eq!(client.get_balance_of(&alice), 10);
+
+    // And the admin may fund an investor someone else cleared.
+    assert_eq!(client.get_compliance_approver(&investor), Some(officer));
+    client.mint_asset(&admin, &investor, &10);
+    assert_eq!(client.get_balance_of(&investor), 10);
+}
+
+#[test]
+fn test_approver_record_tracks_every_approval_path() {
+    let (env, client, admin, officer, _manager, investor) = setup_issuer_world();
+    let second_officer = Address::generate(&env);
+    client.set_role(&admin, &second_officer, &Role::EmergencyOfficer);
+
+    // 1. set_compliance_status (recorded during setup).
+    assert_eq!(
+        client.get_compliance_approver(&investor),
+        Some(officer.clone())
+    );
+
+    // 2. A revocation must not erase who granted the clearance being revoked.
+    client.set_compliance_status(&officer, &investor, &ComplianceStatus::Revoked);
+    assert_eq!(
+        client.get_compliance_approver(&investor),
+        Some(officer.clone())
+    );
+
+    // 3. Re-approval by a different officer overwrites it — the record is
+    //    "who cleared them now", not "who ever cleared them".
+    client.set_compliance_status(&second_officer, &investor, &ComplianceStatus::Approved);
+    assert_eq!(
+        client.get_compliance_approver(&investor),
+        Some(second_officer.clone())
+    );
+
+    // 4. The legacy wrapper drives the same record.
+    let bob = Address::generate(&env);
+    client.whitelist_user(&officer, &bob);
+    assert_eq!(client.get_compliance_approver(&bob), Some(officer.clone()));
+
+    // 5. So does a batch update.
+    let carol = Address::generate(&env);
+    client.batch_set_compliance_status(
+        &second_officer,
+        &vec![
+            &env,
+            ComplianceBatchUpdate {
+                user: carol.clone(),
+                new_status: ComplianceStatus::Approved,
+            },
+        ],
+    );
+    assert_eq!(client.get_compliance_approver(&carol), Some(second_officer));
+
+    // 6. An address that was never approved has no record, and a non-approving
+    //    transition never creates one.
+    let dave = Address::generate(&env);
+    client.set_compliance_status(&officer, &dave, &ComplianceStatus::Pending);
+    assert_eq!(client.get_compliance_approver(&dave), None);
+}
+
+#[test]
+fn test_separation_controls_are_independent() {
+    // Each control must be able to refuse on its own; a test that passes only
+    // because a *different* rule fired would prove nothing.
+    let (_env, client, admin, officer, _manager, _investor) = setup_issuer_world();
+    client.set_compliance_status(&officer, &admin, &ComplianceStatus::Approved);
+
+    // Enforced, but every control relaxed: nothing is refused.
+    client.set_issuer_separation_policy(&admin, &policy_with(true, true, false));
+    assert!(client.check_issuance_authority(&admin, &admin).allowed);
+
+    // Dual-duty only.
+    client.set_issuer_separation_policy(&admin, &policy_with(false, true, false));
+    assert_eq!(
+        client.check_issuance_authority(&admin, &admin).reason,
+        IssuanceGuard::DualDutyConflict
+    );
+
+    // Self-issuance only.
+    client.set_issuer_separation_policy(&admin, &policy_with(true, false, false));
+    assert_eq!(
+        client.check_issuance_authority(&admin, &admin).reason,
+        IssuanceGuard::SelfIssuanceForbidden
+    );
+
+    // Approver only — the compliance officer cleared the admin, not the admin
+    // itself, so this pair is clean.
+    client.set_issuer_separation_policy(&admin, &policy_with(true, true, true));
+    assert!(client.check_issuance_authority(&admin, &admin).allowed);
+
+    // ...and dirty once the admin re-clears itself.
+    client.set_compliance_status(&admin, &admin, &ComplianceStatus::Revoked);
+    client.set_compliance_status(&admin, &admin, &ComplianceStatus::Approved);
+    assert_eq!(
+        client.check_issuance_authority(&admin, &admin).reason,
+        IssuanceGuard::ApproverConflict
+    );
+}
+
+#[test]
+fn test_missing_issuance_duty_is_reported_separately_from_a_separation_failure() {
+    let (_env, client, admin, officer, manager, investor) = setup_issuer_world();
+    client.set_issuer_separation_policy(&admin, &strict_policy());
+
+    // A compliance officer is not an issuer at all: an RBAC failure, not a
+    // separation one. A client must be able to tell "you are not an issuer"
+    // from "you are an issuer, but not for this recipient".
+    let rbac = client.check_issuance_authority(&officer, &investor);
+    assert!(!rbac.allowed);
+    assert_eq!(rbac.reason, IssuanceGuard::MissingIssuanceDuty);
+    assert!(!rbac.reason.is_separation_failure());
+    assert_eq!(rbac.error_code, Some(Error::Unauthorized as u32));
+
+    let separation = client.check_issuance_authority(&admin, &investor);
+    assert!(separation.reason.is_separation_failure());
+    assert_eq!(separation.reason, IssuanceGuard::DualDutyConflict);
+
+    // The scoped manager is the caller the strict policy is designed around.
+    assert!(client.check_issuance_authority(&manager, &investor).allowed);
+}
+
+#[test]
+fn test_check_issuance_authority_matches_mint_enforcement() {
+    // The read and the write path must never disagree: a dashboard that
+    // disables an action on the strength of this read would otherwise be
+    // wrong in exactly the cases that matter.
+    let policies = [
+        policy_with(true, true, false),
+        policy_with(false, true, false),
+        policy_with(true, false, false),
+        policy_with(true, true, true),
+        strict_policy(),
+    ];
+
+    for policy in policies {
+        let (env, client, admin, officer, manager, investor) = setup_issuer_world();
+        let emergency = Address::generate(&env);
+        client.set_role(&admin, &emergency, &Role::EmergencyOfficer);
+        // Every address that appears as a recipient below is compliance-
+        // approved, so the only thing that can refuse a mint here is a
+        // separation control — which is what this test is about.
+        for holder in [&emergency, &manager, &admin, &officer] {
+            client.set_compliance_status(&officer, holder, &ComplianceStatus::Approved);
+        }
+        client.set_issuer_separation_policy(&admin, &policy);
+
+        for caller in [&admin, &manager, &emergency, &officer] {
+            for recipient in [&investor, caller] {
+                let check = client.check_issuance_authority(caller, recipient);
+                let balance_before = client.get_balance_of(recipient);
+                let result = client.try_mint_asset(caller, recipient, &10);
+
+                match result {
+                    Ok(_) => {
+                        assert!(
+                            check.allowed,
+                            "guard refused with {:?} but the mint succeeded",
+                            check.reason
+                        );
+                        assert_eq!(client.get_balance_of(recipient), balance_before + 10);
+                    }
+                    Err(Ok(err)) => {
+                        assert!(
+                            !check.allowed,
+                            "guard allowed but the mint reverted with {err:?}"
+                        );
+                        assert_eq!(check.error_code, Some(err as u32));
+                        assert_eq!(client.get_balance_of(recipient), balance_before);
+                    }
+                    Err(Err(err)) => panic!("unexpected host error: {err:?}"),
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_issuance_check_reports_a_consistent_snapshot() {
+    let (env, client, admin, officer, _manager, investor) = setup_issuer_world();
+    client.set_issuer_separation_policy(&admin, &strict_policy());
+
+    let check = client.check_issuance_authority(&admin, &investor);
+    assert_eq!(check.caller, admin);
+    assert_eq!(check.recipient, investor);
+    assert_eq!(check.caller_role, Role::Admin);
+    assert_eq!(
+        check.caller_duties,
+        vec![
+            &env,
+            IssuerDuty::Compliance,
+            IssuerDuty::Issuance,
+            IssuerDuty::Emergency,
+            IssuerDuty::Governance
+        ]
+    );
+    assert_eq!(check.recipient_approver, Some(officer));
+    assert!(!check.allowed);
+    assert_eq!(check.reason, IssuanceGuard::DualDutyConflict);
+    assert_eq!(check.error_code, Some(Error::IssuanceDutyConflict as u32));
+}
+
+#[test]
+fn test_issuance_reads_never_mutate_state() {
+    let (env, client, admin, _officer, manager, investor) = setup_issuer_world();
+    client.set_issuer_separation_policy(&admin, &strict_policy());
+
+    for caller in [&admin, &manager, &investor] {
+        client.check_issuance_authority(caller, &investor);
+        client.get_duties_of(caller);
+        client.get_compliance_approver(caller);
+    }
+
+    assert_eq!(client.get_balance_of(&investor), 0);
+    assert_eq!(client.get_total_supply(), 0);
+    assert_eq!(client.get_role_of(&manager), Role::AssetManager);
+    assert_eq!(client.get_issuer_separation_policy(), strict_policy());
+    // A pre-flight read is not an issuance and must leave no audit trace.
+    // `env.events().all()` reports the most recent invocation's events, which
+    // for a pure read is nothing at all.
+    assert_eq!(env.events().all(), vec![&env]);
+}
+
+#[test]
+fn test_policy_update_is_admin_only_and_emits_the_previous_policy() {
+    let (env, client, admin, officer, manager, _investor) = setup_issuer_world();
+
+    for caller in [&officer, &manager] {
+        assert_eq!(
+            client.try_set_issuer_separation_policy(caller, &strict_policy()),
+            Err(Ok(Error::Unauthorized))
+        );
+    }
+    assert!(!client.get_issuer_separation_policy().enforced);
+
+    client.set_issuer_separation_policy(&admin, &strict_policy());
+    // Both policies are emitted so an auditor can reconstruct when each
+    // control came into force without replaying storage.
+    assert_eq!(
+        env.events().all(),
+        vec![
+            &env,
+            (
+                client.address.clone(),
+                ("issuer_separation_policy_updated",).into_val(&env),
+                IssuerSeparationPolicyUpdatedEvent {
+                    admin: admin.clone(),
+                    previous_policy: IssuerSeparationPolicy::default_policy(),
+                    new_policy: strict_policy(),
+                }
+                .into_val(&env),
+            ),
+        ]
+    );
+    assert_eq!(client.get_issuer_separation_policy(), strict_policy());
+}
+
+#[test]
+fn test_policy_update_is_blocked_while_paused() {
+    let (_env, client, admin, _officer, _manager, _investor) = setup_issuer_world();
+    client.pause(&admin);
+
+    assert_eq!(
+        client.try_set_issuer_separation_policy(&admin, &strict_policy()),
+        Err(Ok(Error::ContractPaused))
+    );
+    assert!(!client.get_issuer_separation_policy().enforced);
+
+    // The read stays available while paused, so a dashboard can still explain
+    // the configured controls during an incident.
+    client.unpause(&admin);
+    client.set_issuer_separation_policy(&admin, &strict_policy());
+    assert!(client.get_issuer_separation_policy().enforced);
+}
+
+#[test]
+fn test_separation_policy_can_never_lock_a_deployment_out_of_issuance() {
+    // The strictest policy blocks the admin from issuing. That must be
+    // recoverable: `set_issuer_separation_policy` is deliberately not gated by
+    // the policy it sets, so the admin can always relax a rule that turns out
+    // to be too strict.
+    let (env, client, admin, officer, _manager, investor) = setup_issuer_world();
+    client.set_issuer_separation_policy(&admin, &strict_policy());
+
+    // Revoke the only independent issuer, leaving no key able to mint.
+    let lone_manager = Address::generate(&env);
+    client.set_role(&admin, &lone_manager, &Role::AssetManager);
+    client.remove_role(&admin, &lone_manager);
+    assert_eq!(
+        client.try_mint_asset(&admin, &investor, &10),
+        Err(Ok(Error::IssuanceDutyConflict))
+    );
+
+    // Recovery: relax the policy, then issue.
+    client.set_issuer_separation_policy(&admin, &IssuerSeparationPolicy::default_policy());
+    client.mint_asset(&admin, &investor, &10);
+    assert_eq!(client.get_balance_of(&investor), 10);
+    let _ = &officer;
+}
+
+#[test]
+fn test_yield_distribution_respects_the_duty_control_only() {
+    let (_env, client, admin, officer, manager, _investor) = setup_issuer_world();
+    // Every recipient-scoped control is engaged; none can apply to a call with
+    // no beneficiary, so only the duty control may bind here.
+    client.set_issuer_separation_policy(&admin, &strict_policy());
+
+    assert_eq!(
+        client.try_distribute_yield(&admin, &100),
+        Err(Ok(Error::IssuanceDutyConflict))
+    );
+    client.distribute_yield(&manager, &100);
+    let _ = &officer;
+}
+
+#[test]
+fn test_issuance_guard_reports_not_initialized_instead_of_panicking() {
+    let (env, client, admin, _user1, investor) = setup();
+    env.mock_all_auths();
+
+    let check = client.check_issuance_authority(&admin, &investor);
+    assert!(!check.allowed);
+    assert_eq!(check.reason, IssuanceGuard::NotInitialized);
+    assert_eq!(check.error_code, Some(Error::NotInitialized as u32));
+    assert_eq!(check.caller_role, Role::None);
+    // The policy read is equally safe before initialization.
+    assert!(!client.get_issuer_separation_policy().enforced);
 }

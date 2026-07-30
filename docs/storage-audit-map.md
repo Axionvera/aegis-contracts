@@ -1,291 +1,253 @@
-# Storage Audit Map
+# Contract Storage Layout and Migration Guide
 
-This document provides a complete audit map of all Soroban storage keys used by the Aegis RWA Protocol. It maps every key to its value type, storage class, owning functions, mutation points, invariants, failure paths, and linked test coverage.
+This document is the storage compatibility reference for the Aegis contract.
+It describes the layout implemented by `DataKey` in `src/lib.rs`, the value
+models stored under those keys, and the review and migration work required when
+the layout changes.
 
-## Storage Key Reference
+It is a snapshot of the current source, not a substitute for inspecting a
+release's exact WASM and source revision. A pull request that changes storage
+must update this document in the same change.
 
-### `Admin`
+## Storage model
 
-| Property | Value |
-|---|---|
-| **DataKey** | `DataKey::Admin` |
-| **Value type** | `Address` |
-| **Storage class** | Instance |
-| **Lifecycle** | Set once at initialization; overwritten during admin transfer; removed on renounce |
+Aegis uses two Soroban storage classes:
 
-| Function | Operation | Failure path | Test |
+- **Instance storage** holds singleton contract configuration and aggregate
+  state. It shares the contract instance's lifetime.
+- **Persistent storage** holds address-indexed records. Each entry has its own
+  lifetime.
+
+The contract does not currently use temporary storage. It also does not
+explicitly extend storage TTLs. Operators must therefore account for the
+network's storage-expiration and archival behavior; the Rust defaults described
+below apply only when a key is absent and are not a substitute for restoring
+expired state.
+
+All keys are values of the `#[contracttype]` enum `DataKey`. The enum and every
+stored `#[contracttype]` value are persisted encodings. Renaming, removing, or
+changing the shape of a key variant can make existing entries unreachable.
+Changing a stored value's type or changing enum/struct variants or fields can
+make old values decode incorrectly or fail to decode. Treat these as storage
+schema changes even when Rust compilation succeeds.
+
+## Complete key inventory
+
+### Instance storage
+
+| Key | Stored value | Absent-key behavior | Writers and lifecycle |
 |---|---|---|---|
-| `initialize` | **Write** (set) | Panics if already set ("Contract already initialized") | `test_double_initialization_reverts` |
-| `get_admin` | **Read** | Panics if not set ("Admin not initialized") | (exercised by every auth test) |
-| `accept_admin` | **Write** (set) | Panics if no pending candidate; panics if caller is not candidate | `test_full_admin_transfer` |
-| `renounce_admin` | **Write** (remove) | Panics if caller is not admin | `test_renounce_admin_removes_admin` |
+| `Admin` | `Address` | `initialize` may run; admin-required reads fail with `NotInitialized` | Set by `initialize`, replaced by `accept_admin`, removed permanently by `renounce_admin` |
+| `AdminCandidate` | `Address` | No pending admin transfer | Set/overwritten by `transfer_admin`, removed by `accept_admin` |
+| `TotalSupply` | `i128` | Reads as `0` | Increased by successful `mint_asset`; never decreased because there is no burn operation |
+| `Paused` | `bool` | Reads as `false` | Set to `true` by `pause` and `false` by `unpause` |
+| `SupplyCap` | `i128` | Reads as `0` (unbounded) | Set by `accept_supply_cap`; values are non-negative |
+| `SupplyCapCandidate` | `i128` | No pending proposal | Set/overwritten by `propose_supply_cap`; removed by accept or cancel |
+| `HoldingCap` | `i128` | Reads as `0` (unrestricted) | Set by `accept_holding_cap`; values are non-negative |
+| `HoldingCapCandidate` | `i128` | No pending proposal | Set/overwritten by `propose_holding_cap`; removed by accept or cancel |
+| `AssetStatus` | `AssetStatus` | Reads as `Draft` | Set by a valid `set_asset_status` transition |
+| `AssetName` | Soroban `String` | Reads as `""` | Set by `update_asset_metadata` |
+| `AssetSymbol` | Soroban `String` | Reads as `""` | Set by `update_asset_metadata` |
+| `AssetMetadataUri` | Soroban `String` | Reads as `""` | Set by `update_asset_metadata` |
+| `IssuerSeparationPolicy` | `IssuerSeparationPolicy` | Reads as the permissive policy documented below | Replaced atomically by `set_issuer_separation_policy` |
+| `ProtocolConfig` | `ProtocolConfig` | Reads as `{ min_transfer_amount: 0, max_batch_size: 100 }` | Set by `accept_config` |
+| `ProtocolConfigCandidate` | `ProtocolConfig` | No pending proposal | Set/overwritten by `propose_config`; removed by accept or cancel |
 
-**Invariants**:
-- Exactly one `Admin` exists after `initialize` and until `renounce_admin`.
-- After `renounce_admin`, no `Admin` exists — all admin-gated operations permanently revert.
-- After `accept_admin`, the old admin's `Admin` entry is overwritten; the new admin's entry is set.
+### Persistent storage
 
----
-
-### `AdminCandidate`
-
-| Property | Value |
-|---|---|
-| **DataKey** | `DataKey::AdminCandidate` |
-| **Value type** | `Address` |
-| **Storage class** | Instance |
-| **Lifecycle** | Set during 2-step transfer; cleared when transfer completes |
-
-| Function | Operation | Failure path | Test |
+| Key | Stored value | Absent-key behavior | Writers and lifecycle |
 |---|---|---|---|
-| `transfer_admin` | **Write** (set) | Panics if caller is not admin | `test_transfer_admin_reverts_for_non_admin` |
-| `accept_admin` | **Read** + **Write** (remove) | Panics if no pending transfer; panics if caller is not the candidate | `test_accept_admin_reverts_for_wrong_candidate`, `test_accept_admin_reverts_without_pending_transfer` |
+| `Role(Address)` | `Role` | Reads as `Role::None` | Initial admin is set by `initialize`; changed by role management and admin transfer. Revocation stores `None` rather than removing the key |
+| `Whitelist(Address)` | `bool` | Effectively `false` | Compatibility mirror only: set to `true` when status becomes `Approved`, removed for every other status. Contract reads derive approval from `ComplianceStatus` |
+| `ComplianceStatus(Address)` | `ComplianceStatus` | Reads as `Unknown` (fail closed) | Written on each valid compliance transition and never reset to `Unknown` or removed |
+| `Balance(Address)` | `i128` | Reads as `0` | Increased by mint, debited/credited by transfer; zero balances remain stored |
+| `ComplianceApprover(Address)` | `Address` | Reads as `None` | Overwritten whenever the address transitions into `Approved`; deliberately retained when approval is later revoked or blocked |
 
-**Invariants**:
-- `AdminCandidate` is only set between `transfer_admin` and `accept_admin`.
-- If `transfer_admin` is called again before `accept_admin`, the previous candidate is silently overwritten.
-- `AdminCandidate` is always cleared after `accept_admin`.
+`Address` in a key is part of the key, so each address has an independent
+entry. There is no on-chain address list or storage iteration API in this
+contract. A migration that must touch every role, compliance record, balance,
+or approver record cannot discover those addresses from storage alone.
+Historical events or a separately maintained index are required.
 
----
+## Stored data models
 
-### `Role(Address)`
+The definitions in source remain authoritative. These summaries capture the
+fields and compatibility-sensitive semantics needed for storage review.
 
-| Property | Value |
-|---|---|
-| **DataKey** | `DataKey::Role(Address)` |
-| **Value type** | `Role` (enum: `None`, `ComplianceOfficer`, `AssetManager`, `EmergencyOfficer`) |
-| **Storage class** | Persistent |
-| **Lifecycle** | Set at initialization (Admin); set/revoked via role management; overwritten during admin transfer |
+### `Role`
 
-| Function | Operation | Failure path | Test |
-|---|---|---|---|
-| `initialize` | **Write** (set to `Role::Admin`) | Panics if already initialized | `test_lifecycle` |
-| `set_role` | **Write** | Panics if not admin; panics if assigning `Role::Admin` | `test_set_role_reverts_for_non_admin`, `test_cannot_assign_admin_role_via_set_role` |
-| `remove_role` | **Write** (set to `Role::None`) | Panics if not admin; panics if target has no role | `test_remove_role_reverts_for_non_admin`, `test_remove_role_reverts_when_target_has_no_role` |
-| `accept_admin` | **Write** (old admin → `None`, new admin → `Admin`) | Panics if no candidate; panics if wrong candidate | `test_full_admin_transfer` |
-| `renounce_admin` | **Write** (set to `Role::None`) | Panics if not admin | `test_renounce_admin_removes_admin` |
-| `get_role` | **Read** | Returns `Role::None` if not set | `test_get_role_returns_none_for_unassigned` |
-| `require_role` | **Read** (via `get_role`) | Panics if caller lacks required role and is not admin | All RBAC tests |
+`None`, `Admin`, `ComplianceOfficer`, `AssetManager`, and
+`EmergencyOfficer`. `Admin` is assigned only during initialization or accepted
+admin transfer. A stored `None` and an absent role currently produce the same
+read result, although their raw storage presence differs.
 
-**Invariants**:
-- At most one address holds `Role::Admin` at any time.
-- `Role::Admin` cannot be assigned via `set_role` — only via `initialize` or `accept_admin`.
-- A `Role::None` entry in storage is functionally equivalent to no entry (both return `Role::None` on read).
-- Persistent storage means role entries persist across contract instance upgrades (if any).
+### `ComplianceStatus`
 
----
+`Unknown`, `Pending`, `Approved`, `Revoked`, and `Blocked`. Absence is
+`Unknown`; `Unknown` is never written as a target. Only `Approved` permits
+receiving or sending; moving to another state freezes rather than deletes an
+existing balance. `Whitelist(Address)` is a legacy derived mirror, not the
+source of truth.
 
-### `ComplianceStatus(Address)`
+### `AssetStatus`
 
-| Property | Value |
-|---|---|
-| **DataKey** | `DataKey::ComplianceStatus(Address)` |
-| **Value type** | `ComplianceStatus` (enum: `Unknown`, `Pending`, `Approved`, `Revoked`, `Blocked`) |
-| **Storage class** | Persistent |
-| **Lifecycle** | Created on the address's first lifecycle transition; overwritten on every subsequent transition; never removed |
+`Draft`, `Active`, `Paused`, `Retired`, and `Blocked`. Absence is `Draft`.
+Only `Active` permits minting and transfers. This model is separate from the
+contract-wide `Paused` boolean. `Retired` is terminal.
 
-| Function | Operation | Failure path | Test |
-|---|---|---|---|
-| `set_compliance_status` | **Write** | `ContractPaused` if paused; `Unauthorized` if caller lacks a compliance role (or is not admin when leaving `Blocked`); `ComplianceStatusUnchanged` on a no-op; `InvalidComplianceTransition` if the matrix forbids it | `test_full_happy_path_lifecycle_walk`, `test_every_invalid_transition_is_rejected_exhaustively`, `test_only_admin_can_unblock`, `test_set_compliance_status_blocked_when_paused` |
-| `batch_set_compliance_status` | **Write** | Same transition, authorization, and pause errors as `set_compliance_status`; rejects duplicate users with `InvalidComplianceTransition`; validates the whole batch before writing | `test_batch_set_compliance_status_updates_many_addresses_atomically`, `test_batch_set_compliance_status_rejects_invalid_entry_without_partial_write` |
-| `whitelist_user` | **Write** (→ `Approved`) | As above; `InvalidComplianceTransition` if currently `Blocked` | `test_legacy_whitelist_wrappers_drive_the_lifecycle`, `test_legacy_whitelist_cannot_lift_a_block` |
-| `revoke_whitelist` | **Write** (→ `Revoked`) | As above; a tolerated no-op from `Unknown` / `Blocked` | `test_legacy_revoke_does_not_downgrade_a_block`, `test_legacy_revoke_of_unknown_address_is_a_tolerated_no_op` |
-| `get_compliance_status` | **Read** | Returns `Unknown` if not set; never panics | `test_compliance_status_defaults_to_unknown` |
-| `require_can_send` / `require_can_receive` | **Read** | Returns a status-specific error code (4000/4002/4004 sender, 4001/4003/4005 receiver) | `test_mint_rejects_each_non_approved_status_with_its_own_code`, `test_transfer_rejects_each_non_approved_sender_status` |
+### `ProtocolConfig`
 
-**Invariants**:
-- An address with no entry reads as `Unknown` — the fail-closed default that permits nothing.
-- `Unknown` is never written as a target: compliance history is never erased.
-- A transition is persisted only if `transition_is_allowed(current, new)` holds; rejected transitions leave storage untouched.
-- Leaving `Blocked` requires the supreme admin and can only target `Pending`.
-- Every persisted transition emits exactly one `compliance_status_changed` event carrying the previous and new state.
-- Non-`Approved` states freeze a holder's `Balance` but never modify it.
-
-See [Compliance Status Lifecycle](compliance-lifecycle.md) for the full matrix.
-
----
-
-### `Whitelist(Address)`
-
-| Property | Value |
-|---|---|
-| **DataKey** | `DataKey::Whitelist(Address)` |
-| **Value type** | `bool` (stored as `true` when approved) |
-| **Storage class** | Persistent |
-| **Lifecycle** | **Derived mirror** of `ComplianceStatus(Address)`, kept for backwards compatibility. Written only by the lifecycle writer: set to `true` when a transition lands on `Approved`, removed on every other transition. |
-
-| Function | Operation | Failure path | Test |
-|---|---|---|---|
-| `write_status` (internal) | **Write** (set/remove) | Never fails independently — always runs inside an already-validated transition | `test_full_happy_path_lifecycle_walk` |
-| `is_whitelisted` (public) | **Read** | Derived from `ComplianceStatus`; returns `false` if not `Approved` | `test_read_functions_available_when_paused` |
-
-**Invariants**:
-- `Whitelist(addr) == true` ⟺ `ComplianceStatus(addr) == Approved`. The two keys are written together and cannot drift.
-- **Not the source of truth.** Read `ComplianceStatus` instead; this key exists only so pre-lifecycle integrations keep working.
-- A non-approved address has no `Whitelist(addr)` entry (reads as `false`).
-- Status is not affected by pause state for reads — only writes are blocked.
-
----
-
-### `Balance(Address)`
-
-| Property | Value |
-|---|---|
-| **DataKey** | `DataKey::Balance(Address)` |
-| **Value type** | `i128` |
-| **Storage class** | Persistent |
-| **Lifecycle** | Created on first mint; modified on transfer |
-
-| Function | Operation | Failure path | Test |
-|---|---|---|---|
-| `mint_asset` | **Write** (read-modify-write: add `amount`) | Panics if paused; panics if receiver not whitelisted | `test_mint_succeeds_with_asset_manager_role` |
-| `transfer` | **Write** (read-modify-write: subtract from `from`, add to `to`) | Panics if paused; panics if sender not whitelisted; panics if receiver not whitelisted; panics if insufficient balance | `test_lifecycle` |
-| `get_balance_of` | **Read** | Returns `0` if not set | `test_read_functions_available_when_paused` |
-
-**Invariants**:
-- `Balance(addr)` is always `>= 0` (no negative balances).
-- Sum of all `Balance` values equals `TotalSupply` (conservation of tokens).
-- `Balance` is not set until the first `mint_asset` to that address.
-- `transfer` atomically debits sender and credits receiver — no intermediate state where tokens are "in flight".
-- Persistent storage means balances survive contract instance upgrades.
-
-**Conservation check** (off-chain):
-```
-sum(Balance[addr] for all addr) == TotalSupply
-```
-
----
-
-### `TotalSupply`
-
-| Property | Value |
-|---|---|
-| **DataKey** | `DataKey::TotalSupply` |
-| **Value type** | `i128` |
-| **Storage class** | Instance |
-| **Lifecycle** | Incremented on mint; never decremented |
-
-| Function | Operation | Failure path | Test |
-|---|---|---|---|
-| `mint_asset` | **Write** (read-modify-write: add `amount`) | Panics if paused; panics if receiver not whitelisted | `test_mint_succeeds_with_asset_manager_role` |
-| `get_total_supply` | **Read** | Returns `0` if not set | `test_read_functions_available_when_paused` |
-
-**Invariants**:
-- `TotalSupply` is monotonically increasing (only incremented, never decremented).
-- `TotalSupply` >= 0.
-- There is no burn function — `TotalSupply` can only increase.
-- `distribute_yield` does not modify `TotalSupply` (it is a mock/placeholder).
-- Instance storage means `TotalSupply` is bound to the contract instance lifecycle.
-
----
-
-### `Paused`
-
-| Property | Value |
-|---|---|
-| **DataKey** | `DataKey::Paused` |
-| **Value type** | `bool` |
-| **Storage class** | Instance |
-| **Lifecycle** | Set to `true` on pause; set to `false` on unpause |
-
-| Function | Operation | Failure path | Test |
-|---|---|---|---|
-| `pause` | **Write** (set to `true`) | Panics if not admin/EmergencyOfficer; panics if already paused | `test_pause_succeeds_for_admin`, `test_pause_reverts_when_already_paused` |
-| `unpause` | **Write** (set to `false`) | Panics if not admin; panics if not paused | `test_unpause_succeeds_for_admin`, `test_unpause_reverts_when_not_paused` |
-| `is_paused` | **Read** | Returns `false` if not set (default) | `test_read_functions_available_when_paused` |
-
-**Invariants**:
-- `Paused` defaults to `false` (not set) — the contract starts unpaused.
-- When `true`, all state-changing operations revert except `pause` and `unpause`.
-- Read functions (`get_role_of`, `get_balance_of`, `get_total_supply`, `is_whitelisted`) remain available regardless of pause state.
-- Only Admin can unpause — EmergencyOfficer cannot.
-
----
-
-## Cross-Key Invariants
-
-### Token Conservation
-```
-∀ addr: Balance(addr) >= 0
-∑ Balance(addr) == TotalSupply
-```
-**Test coverage**: `test_lifecycle`, `test_pause_unpause_full_lifecycle`
-
-### Single Admin
-```
-∃! addr: Role(addr) == Role::Admin
-```
-After `initialize`, exactly one address holds the Admin role. This is maintained through `accept_admin` (atomic swap) and broken only by `renounce_admin`.
-**Test coverage**: `test_full_admin_transfer`, `test_renounce_admin_removes_admin`
-
-### Compliance Lifecycle Gating
-```
-∀ mint_asset(to):        ComplianceStatus(to)   == Approved
-∀ transfer(from, to):    ComplianceStatus(from) == Approved ∧ ComplianceStatus(to) == Approved
-∀ transition(from, to):  transition_is_allowed(from, to)
-```
-Tokens can only be created at or transferred between compliance-`Approved`
-addresses; every other lifecycle state fails closed with its own error code.
-Status changes themselves are constrained by the transition matrix.
-**Test coverage**: `test_mint_rejects_each_non_approved_status_with_its_own_code`, `test_transfer_rejects_each_non_approved_sender_status`, `test_transfer_rejects_each_non_approved_receiver_status`, `test_every_invalid_transition_is_rejected_exhaustively`, `test_lifecycle`
-
-### Pause Immutability
-```
-Paused == true ⟹ ∀ op ∈ {mint, transfer, set_compliance_status, whitelist, revoke, yield, set_role, remove_role, transfer_admin, accept_admin, renounce_admin}: op() reverts
-```
-**Test coverage**: `test_mint_blocked_when_paused`, `test_transfer_blocked_when_paused`, `test_whitelist_blocked_when_paused`, `test_revoke_whitelist_blocked_when_paused`, `test_distribute_yield_blocked_when_paused`, `test_set_role_blocked_when_paused`, `test_remove_role_blocked_when_paused`
-
-### RBAC Enforcement
-```
-∀ privileged_op(caller, ...): caller == Admin ∨ Role(caller) == required_role
-```
-**Test coverage**: All "wrong-caller" tests in `test.rs`
-
----
-
-## Failure-Path State Expectations
-
-| Failure | State after revert | Storage affected |
+| Field | Type | Constraint / default |
 |---|---|---|
-| `initialize` double-call | No change | None |
-| `mint_asset` paused | No change | None |
-| `mint_asset` receiver not whitelisted | No change | None |
-| `mint_asset` unauthorized | No change | None |
-| `transfer` paused | No change | None |
-| `transfer` insufficient balance | No change | None |
-| `transfer` sender not whitelisted | No change | None |
-| `transfer` receiver not whitelisted | No change | None |
-| `whitelist_user` paused | No change | None |
-| `whitelist_user` unauthorized | No change | None |
-| `revoke_whitelist` paused | No change | None |
-| `revoke_whitelist` unauthorized | No change | None |
-| `set_role` paused | No change | None |
-| `set_role` assigning Admin | No change | None |
-| `set_role` unauthorized | No change | None |
-| `remove_role` no role to revoke | No change | None |
-| `remove_role` unauthorized | No change | None |
-| `transfer_admin` unauthorized | No change | None |
-| `accept_admin` wrong candidate | No change | None |
-| `accept_admin` no pending transfer | No change | None |
-| `renounce_admin` unauthorized | No change | None |
-| `pause` already paused | No change | None |
-| `unpause` not paused | No change | None |
-| `unpause` unauthorized | No change | None |
+| `min_transfer_amount` | `i128` | Must be non-negative; absent config defaults to `0` |
+| `max_batch_size` | `u32` | Must be non-zero; absent config defaults to `100` |
 
-All failing operations are atomic — Soroban reverts the entire transaction on panic, leaving storage untouched.
+Adding, removing, renaming, or changing the type of either field changes the
+encoded stored value and needs a migration or a new versioned key.
 
----
+### `IssuerSeparationPolicy`
 
-## Soroban Storage Type Implications
-
-| Type | Behaviour | Used for |
+| Field | Type | Absent-policy default |
 |---|---|---|
-| **Instance** | Bound to contract instance lifecycle. Cleared if contract is re-installed. | Admin, AdminCandidate, TotalSupply, Paused |
-| **Persistent** | Survives across contract upgrades. Requires rent exemption. | Role, Whitelist, Balance |
+| `enforced` | `bool` | `false` |
+| `allow_dual_duty_issuance` | `bool` | `true` |
+| `allow_self_issuance` | `bool` | `true` |
+| `require_independent_approver` | `bool` | `false` |
 
-**Risk**: If the contract instance is replaced (not upgraded in-place), all Instance storage is lost. This would:
-- Remove the `Admin` (contract becomes ungovernable).
-- Reset `TotalSupply` to 0 (but balances persist — supply would be inconsistent).
-- Reset `Paused` to `false` (contract resumes in unpaused state).
+The all-permissive absent value preserves behavior for deployments created
+before the policy key existed. A newly added policy field will not
+automatically receive a Rust default when decoding an already stored policy.
 
-**Mitigation**: Use Soroban's built-in contract upgrade mechanism (which preserves instance storage) rather than deploying a new contract.
+## Cross-key invariants
+
+These relationships must remain true before and after a migration:
+
+- The active admin's `Role(Address)` is `Admin`. Accepted transfer changes the
+  old role to `None`, changes the new role to `Admin`, updates `Admin`, and
+  removes `AdminCandidate` atomically. Renunciation intentionally leaves no
+  active admin.
+- `Whitelist(address)` is present with `true` if and only if
+  `ComplianceStatus(address)` is `Approved`. New code must never make the
+  legacy mirror authoritative.
+- Every balance is non-negative and the sum of all balances equals
+  `TotalSupply`. Transfers conserve supply; minting increases a balance and
+  supply by the same amount.
+- Active and candidate governance keys are distinct. Accepting a cap or config
+  copies the candidate to the active key and removes the candidate.
+- A cap of `0` means disabled. Lowering a cap below existing supply or balance
+  does not rewrite existing state; it prevents later credits that would exceed
+  the cap.
+- `ComplianceApprover(address)` records the most recent transition into
+  `Approved`. Leaving `Approved` must not clear it.
+
+Soroban transaction rollback makes a failed invocation atomic: storage writes
+and events from the failed invocation are discarded. Migration code must
+preserve that property and must not deliberately split coupled invariants
+across transactions without a documented safe intermediate state.
+
+## Upgrade and migration assumptions
+
+An in-place contract code upgrade and deploying a new contract are different
+operations:
+
+- An **in-place WASM upgrade at the same contract address** retains that
+  contract's storage, subject to ledger lifetime/archival rules. The new WASM
+  must still understand every retained key and value.
+- A **new deployment at a new contract address** has a different storage
+  namespace. Neither instance nor persistent entries automatically follow it.
+  State must be exported, verified, and explicitly imported, and integrations
+  must move to the new contract ID.
+
+The current Aegis public interface exposes neither a WASM-upgrade entrypoint
+nor a storage migration entrypoint, and there is no stored schema-version key.
+Consequently, documenting a proposed schema is not enough to make it
+deployable. Before changing an incompatible layout, the PR must define the
+authorized upgrade mechanism and one of these strategies:
+
+1. **Backward-compatible read:** keep the existing key and encoding; add only
+   behavior that can interpret it.
+2. **Versioned key with lazy migration:** add a new `DataKey` variant, read the
+   new entry first, fall back to the old entry, validate, then write the new
+   entry. Define whether and when the old entry is removed.
+3. **Explicit bounded migration:** add an authenticated, replay-safe operation
+   that converts a known set of entries. Address-indexed migrations must accept
+   bounded batches because the contract cannot enumerate all addresses.
+4. **New deployment and state import:** define the snapshot source, contract-ID
+   cutover, import authorization, reconciliation, and rollback plan.
+
+Never reuse an old key for unrelated data, and do not rely on
+`unwrap_or(...)` to handle an incompatible encoded value: it handles an absent
+key, not a value that cannot be decoded as the requested type.
+
+### Migration plan requirements
+
+Every incompatible storage change must document:
+
+- the source and destination schema, including exact key and value types;
+- supported starting versions and how the deployed version is detected;
+- authorization and pause requirements;
+- how all affected addresses are discovered;
+- batching limits, retry/idempotency behavior, and partial-progress tracking;
+- invariant checks before, during, and after migration;
+- expected events or other audit evidence;
+- TTL/archival restoration assumptions;
+- integration impact and, for a new deployment, contract-ID cutover;
+- rollback or forward-fix procedure and the point after which rollback is no
+  longer safe.
+
+Migration tests must begin with state encoded in the old layout. Tests that
+only write and read the new model do not demonstrate compatibility.
+
+## Storage-changing PR risk guide
+
+| Change | Typical risk | Required response |
+|---|---|---|
+| Add a key with an absent-key default | Lower, but default behavior may alter security or economics | Document the key/default and test both absent and present cases |
+| Add a key without a default | Uninitialized reads can fail | Define initialization/backfill ordering and test a pre-change deployment |
+| Rename/remove/change a `DataKey` variant | Existing state can become unreachable | Keep a legacy reader or provide an explicit migration |
+| Change a stored value type or struct/enum shape | Existing values may no longer decode | Use a versioned representation and old-state migration tests |
+| Change an absent-key default | Existing deployments change behavior without a write | Treat as a behavioral migration and review all pre-existing states |
+| Move between instance and persistent storage | Lifetime and lookup semantics change | Copy and verify data; define expiration handling and cleanup |
+| Add a new address-indexed record | Indexers cannot enumerate it from contract storage | Define discovery/events and any backfill source |
+| Change `Balance` or `TotalSupply` | Can violate token conservation | Reconcile every balance against supply and independently review arithmetic |
+| Change compliance or role state | Can authorize an ineligible address or remove governance | Security review, negative tests, and post-migration authorization audit |
+| Replace the contract instead of upgrading in place | All state remains under the old contract ID | Full export/import and integration cutover plan |
+
+## Mandatory reviewer checklist
+
+For any PR that adds, removes, renames, reorders, repurposes, or changes the
+type/default/storage class of persisted data, authors and reviewers must
+complete this checklist:
+
+- [ ] Every affected `DataKey`, value model, storage class, default, reader,
+      writer, and removal path is identified.
+- [ ] This document and relevant module documentation are updated.
+- [ ] Compatibility is classified as backward-compatible, lazy-migrated,
+      explicitly migrated, or new-deployment-only, with justification.
+- [ ] Tests construct the previous deployed layout and prove reads or migration
+      under the new code.
+- [ ] Absent, legacy, malformed/incompatible, partially migrated, and repeated
+      migration cases are considered.
+- [ ] Authorization, pause behavior, atomicity, batching, idempotency, and
+      storage lifetime are reviewed.
+- [ ] Cross-key invariants are asserted after success and remain intact after
+      every tested failure.
+- [ ] Address discovery and off-chain indexer dependencies are documented.
+- [ ] SDK, dashboard, indexer, event, and contract-ID impacts are documented.
+- [ ] A rollback or forward-fix plan and operational verification steps exist.
+- [ ] A second reviewer explicitly approves changes to balances, total supply,
+      admin/roles, or compliance state.
+
+If a checklist item is not applicable, the PR must say why; an unchecked item
+without an explanation is not review-ready.
+
+## Source map
+
+- Key enum and basic reads: `src/lib.rs`
+- Admin, roles, and contract pause: `src/admin.rs`
+- Balances, supply, and metadata: `src/asset.rs`
+- Compliance status and whitelist mirror: `src/compliance.rs`
+- Asset lifecycle: `src/lifecycle.rs`
+- Supply and holding caps: `src/supply_cap.rs`, `src/holding.rs`
+- Protocol configuration: `src/config.rs`
+- Issuer policy and approver records: `src/issuer.rs`

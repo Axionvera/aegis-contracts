@@ -8,6 +8,7 @@ use soroban_sdk::{contractimpl, contracttype, Address, Env, String};
 use crate::admin::{require_not_paused, require_role};
 use crate::compliance;
 use crate::holding;
+use crate::issuer::require_issuance_authority;
 
 use crate::restrictions::{asset_status_reason, error_for_reason, RestrictionReason};
 
@@ -71,16 +72,17 @@ pub struct AssetMetadataUpdatedEvent {
     pub uri: String,
 }
 
-/// Returns the current asset lifecycle status, defaulting to `Active` when
+/// Returns the current asset lifecycle status, defaulting to `Draft` when
 /// none has been recorded. Pure read — shared with the capability module so
-/// both report the same lifecycle state.
+/// both report the same lifecycle state as `lifecycle::get_asset_status`.
 pub fn get_asset_status_internal(env: &Env) -> AssetStatus {
     env.storage()
         .instance()
         .get(&DataKey::AssetStatus)
-        .unwrap_or(AssetStatus::Active)
+        .unwrap_or(AssetStatus::Draft)
 }
 
+#[allow(dead_code)]
 fn transition_is_valid(from: &AssetStatus, to: &AssetStatus) -> bool {
     if from == to {
         return false;
@@ -102,6 +104,10 @@ fn transition_is_valid(from: &AssetStatus, to: &AssetStatus) -> bool {
         }
         AssetStatus::Retired => false,
         AssetStatus::Blocked => matches!(to, AssetStatus::Active | AssetStatus::Retired),
+        AssetStatus::Draft => matches!(
+            to,
+            AssetStatus::Active | AssetStatus::Retired | AssetStatus::Blocked
+        ),
     }
 }
 
@@ -194,6 +200,13 @@ impl AegisContract {
         require_not_paused(&env);
         admin.require_auth();
         require_role(&env, &admin, Role::AssetManager);
+
+        // Separation of duties: the party that decides who may hold the asset
+        // must not also be the party that decides who receives it. Inert
+        // unless an admin has enabled the policy, so existing deployments are
+        // unaffected. See `docs/issuer-role-separation.md`.
+        require_issuance_authority(&env, &admin, Some(&to));
+
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }
@@ -311,6 +324,12 @@ impl AegisContract {
         require_not_paused(&env);
         admin.require_auth();
         require_role(&env, &admin, Role::AssetManager);
+
+        // Yield distribution is an issuance action with no single beneficiary,
+        // so only the duty-level control applies (no self- or approver-check
+        // target exists).
+        require_issuance_authority(&env, &admin, None);
+
         if amount <= 0 {
             return Err(Error::InvalidAmount);
         }

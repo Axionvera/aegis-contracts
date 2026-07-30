@@ -34,6 +34,15 @@ pub enum Error {
     AlreadyPaused = 3005,
     /// The contract is not currently paused.
     NotPaused = 3006,
+    /// Issuer separation is enforced and the caller holds both the compliance
+    /// and issuance duties, so it may not issue.
+    IssuanceDutyConflict = 3007,
+    /// Issuer separation is enforced and the caller is the recipient of its
+    /// own issuance.
+    SelfIssuanceForbidden = 3008,
+    /// Issuer separation is enforced and the caller is the address that
+    /// approved the recipient's compliance.
+    IssuanceApproverConflict = 3009,
 
     // 4000s: Compliance
     /// The sending address has no current clearance (`Unknown` or `Revoked`).

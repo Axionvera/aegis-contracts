@@ -7,6 +7,12 @@ capability reads — published for use by other repositories.
 The fixtures live in [`fixtures/sdk/`](../fixtures/sdk) and are generated and
 verified by [`tests/sdk_fixtures.rs`](../tests/sdk_fixtures.rs).
 
+These fixtures verify protocol behavior and wire compatibility. They do not
+determine whether an investor, asset, transfer, or deployment satisfies any
+law, regulation, investment requirement, or financial objective. Legal and
+financial determinations remain off-chain responsibilities; see the
+[`Legal Boundary Disclaimer`](legal-boundary-disclaimer.md).
+
 ## Why these exist
 
 SDK, dashboard, and indexer repos all need to know the exact shape of a
@@ -40,7 +46,24 @@ Determinism comes from three choices:
    host-generated one.
 2. Every actor address is a **fixed synthetic strkey** (see below).
 3. Fixtures are rendered with a small, insertion-ordered JSON writer, so byte
-   output is stable across runs, machines, and Rust versions.
+   output is stable across runs, machines, and Rust versions. Verification
+   treats Git's Windows CRLF checkout conversion as equivalent to canonical
+   LF; all JSON tokens, ordering, values, and XDR bytes are still compared
+   exactly.
+
+Event fixtures add three independent guards:
+
+1. Each live event sequence is compared against exported, typed Rust payload
+   structs before it is serialized. This checks topic, contract address,
+   caller, payload, event count, and ordering.
+2. A source coverage guard requires every emitted contract topic to appear in
+   `04-events.json`.
+3. The rendered JSON and raw `ContractEvent` XDR are compared with the
+   committed fixture.
+
+As a result, update mode cannot silently approve an accidental event schema
+change: the contributor must intentionally update the typed expectation
+before a new snapshot can be written.
 
 ## The two modes
 
@@ -48,8 +71,8 @@ The harness both publishes and guards the fixtures.
 
 ```bash
 # Verify (the default, and what CI runs):
-# regenerate every scenario and compare byte-for-byte against the
-# committed files. Contract drift fails here.
+# regenerate every scenario and compare exactly against the committed
+# files (after CRLF/LF normalization). Contract drift fails here.
 cargo test --test sdk_fixtures
 
 # Update: rewrite the committed fixtures after an intentional change.
@@ -252,15 +275,20 @@ a contract change cannot silently alter your test expectations, and key off
 
 1. Add it to the relevant `fixture_*` test in `tests/sdk_fixtures.rs`, driving
    the real client rather than constructing values by hand.
-2. Use `Harness::render` for return values and `Harness::events` for events,
-   so output is derived from wire-level XDR.
-3. Assert the behaviour in Rust as well (`assert_eq!`) — the fixture records
-   what happened, the assertion states what *should* happen, and having both
-   means a wrong fixture cannot quietly become the new expected value.
+2. Use `Harness::render` for return values. For events, construct the exported
+   payload struct with `typed_events!`; this asserts the exact typed sequence
+   and then renders the same live events from wire-level XDR.
+3. For an expected silent path, assert the specific failure first and then use
+   `Harness::assert_no_events`. Never model a reverted compliance action as an
+   emitted "rejection" event: Soroban discards events from reverted calls.
 4. Give it a unique, stable `id`; ids are the downstream addressing key and
    renaming one is a breaking change.
-5. Regenerate with `UPDATE_FIXTURES=1`, review the diff, and commit the
-   updated JSON alongside the test change.
+5. If event behavior intentionally changes, update the typed expectation and
+   [`docs/events.md`](events.md) in the same change. Explain the SDK/dashboard
+   compatibility impact in the PR.
+6. Regenerate with `UPDATE_FIXTURES=1`, review the diff, and commit the
+   updated JSON alongside the test change. Update mode is not an approval
+   mechanism; a changed snapshot still requires review.
 
 Use only the actors in `00-actors.json`. Adding a new one means extending the
 `ACTORS` table in `tests/support/mod.rs` with a strkey derived from the
